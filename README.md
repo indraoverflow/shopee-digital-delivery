@@ -124,7 +124,11 @@ docker compose logs migrate
 
 ### Local development
 
-Requirements: Node 22+, pnpm 10+, a PostgreSQL 15+ instance.
+Requirements: Node 22 (`nvm use`), pnpm 10+, PostgreSQL 15+.
+
+> Build the web app on Node 22. Next 16.4.6 fails to prerender its global error page on Node 26
+> (`Cannot read properties of null (reading 'useContext')`); the Docker image and CI both use Node 22,
+> which is why `.nvmrc` pins it.
 
 ```bash
 git submodule update --init --recursive

@@ -36,6 +36,7 @@ services:
     command: ["node", "apps/api/dist/bootstrap.js"]
     env_file: [.env]
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-qansa}:${POSTGRES_PASSWORD:-qansa}@postgres:5432/${POSTGRES_DB:-qansa_delivery}
     depends_on:
       postgres:
@@ -49,6 +50,7 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-qansa}:${POSTGRES_PASSWORD:-qansa}@postgres:5432/${POSTGRES_DB:-qansa_delivery}
       MIGRATIONS_DIR: /app/migrations
     depends_on:
@@ -74,6 +76,7 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-qansa}:${POSTGRES_PASSWORD:-qansa}@postgres:5432/${POSTGRES_DB:-qansa_delivery}
       MIGRATIONS_DIR: /app/migrations
     depends_on:
@@ -92,6 +95,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+      HOSTNAME: 0.0.0.0
       API_URL: http://api:4000
     depends_on:
       api:

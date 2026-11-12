@@ -13,20 +13,28 @@ import { loadConfig } from "./env.js";
 
 const config = loadConfig();
 
-const pinoLogger = pino({
-  level: config.logLevel,
-  ...(config.nodeEnv === "development"
-    ? { transport: { target: "pino-pretty", options: { colorize: true, translateTime: "HH:MM:ss" } } }
-    : {}),
-  redact: ["req.headers.authorization", "req.headers.cookie"],
-});
+const logger: Logger = (() => {
+  const build = (pretty: boolean) => {
+    try {
+      return pino({
+        level: config.logLevel,
+        ...(pretty ? { transport: { target: "pino-pretty", options: { colorize: true, translateTime: "HH:MM:ss" } } } : {}),
+        redact: ["req.headers.authorization", "req.headers.cookie"],
+      });
+    } catch {
+      // A production image has no pino-pretty; plain JSON is always available.
+      return pino({ level: config.logLevel, redact: ["req.headers.authorization", "req.headers.cookie"] });
+    }
+  };
 
-const logger: Logger = {
-  info: (context, message) => pinoLogger.info(context, message),
-  warn: (context, message) => pinoLogger.warn(context, message),
-  error: (context, message) => pinoLogger.error(context, message),
-  debug: (context, message) => pinoLogger.debug(context, message),
-};
+  const base = build(config.nodeEnv === "development");
+  return {
+    info: (context, message) => base.info(context, message),
+    warn: (context, message) => base.warn(context, message),
+    error: (context, message) => base.error(context, message),
+    debug: (context, message) => base.debug(context, message),
+  };
+})();
 
 const database = createDatabase(config.databaseUrl, { max: 10 });
 const gateway = createGateway({

@@ -1,8 +1,7 @@
 import { hostname } from "node:os";
 import { createDatabase } from "@qansa/db";
 import { createGateway } from "@qansa/shopee-adapter";
-import type { Logger } from "@qansa/services";
-import pino from "pino";
+import { createLogger } from "./logger.js";
 import { z } from "zod";
 import { startWorkerLoop } from "./worker.js";
 
@@ -38,18 +37,7 @@ const schema = z.object({
 
 const env = schema.parse(process.env);
 
-const logger: Logger = (() => {
-  const base = pino({
-    level: env.LOG_LEVEL,
-    ...(env.NODE_ENV === "development" ? { transport: { target: "pino-pretty", options: { colorize: true, translateTime: "HH:MM:ss" } } } : {}),
-  });
-  return {
-    info: (context, message) => base.info(context, message),
-    warn: (context, message) => base.warn(context, message),
-    error: (context, message) => base.error(context, message),
-    debug: (context, message) => base.debug(context, message),
-  };
-})();
+const { logger } = createLogger({ level: env.LOG_LEVEL, pretty: env.NODE_ENV === "development" });
 
 const database = createDatabase(env.DATABASE_URL, { max: 5 });
 const gateway = createGateway({

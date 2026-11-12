@@ -27,5 +27,8 @@ COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/web/public ./apps/web/public
 
 ENV PORT=3000
+# Next's standalone server binds to $HOSTNAME when it is set; Docker sets it to
+# the container id, which makes 127.0.0.1 health checks fail.
+ENV HOSTNAME=0.0.0.0
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]

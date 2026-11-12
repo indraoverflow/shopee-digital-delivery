@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the vendored Shopee client
+        run: pnpm --filter shopee-integration build
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Tests
+        run: pnpm test
+        env:
+          NODE_ENV: test
+
+      - name: Build API and worker
+        run: pnpm --filter @qansa/api build && pnpm --filter @qansa/worker build
+
+      - name: Build web
+        run: pnpm --filter @qansa/web build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          API_URL: http://127.0.0.1:4000
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build API image
+        run: docker build -f docker/api.Dockerfile -t qansa-api:ci .
+
+      - name: Build web image
+        run: docker build -f docker/web.Dockerfile -t qansa-web:ci .

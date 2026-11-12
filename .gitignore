@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+
+# runtime data: tokens, uploads, logs
+data/
+*.log
+.env
+.env.*
+!.env.example
+
+# tooling
+.DS_Store
+coverage/
+playwright-report/
+test-results/

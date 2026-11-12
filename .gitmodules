@@ -1,0 +1,3 @@
+[submodule "vendor/shopee-integration"]
+	path = vendor/shopee-integration
+	url = https://github.com/indraoverflow/shopee-integration.git

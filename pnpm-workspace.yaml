@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "vendor/shopee-integration"
+
+# pnpm 10+ blocks dependency postinstall scripts unless they are listed. Each
+# entry here is a package that ships a native binary and needs one of its own.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver
+  - "@tailwindcss/oxide"
+  - better-sqlite3

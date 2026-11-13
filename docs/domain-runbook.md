@@ -140,6 +140,21 @@ Then run the repo's own probes against the new origin:
       node scripts/smoke.mjs
     API_URL=https://api.example.com node scripts/preflight.mjs
 
+## CORS: the second domain has to be named
+
+The portal at `claim.example.com` calls the API at `api.example.com`, so the browser sends an
+`Origin` header the API has never seen. The allow list is built from `ADMIN_ORIGIN`,
+`CLAIM_ORIGIN` and `EXTRA_ORIGINS`, and anything missing answers 403 `CORS_BLOCKED` with
+"Origin tidak diizinkan", which reaches the buyer as a claim that simply fails.
+
+During the migration both domains stay usable:
+
+    CLAIM_ORIGIN=https://claim.example.com
+    EXTRA_ORIGINS=...,https://claim.qansa.web.id,https://admin.example.com,https://api.example.com
+
+`ADMIN_ORIGIN` is deliberately left on the old host until the console moves, so operators
+working there do not lose their session mid-shift.
+
 ## Apex and www
 
 `example.com` and `www.example.com` are one permanent redirect to `claim.example.com`, so the address a

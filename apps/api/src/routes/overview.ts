@@ -241,6 +241,30 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
       .leftJoin(schema.productMappings, sql`${schema.productMappings.shopeeProductId} = ${schema.shopeeProducts.id}`)
       .where(sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null`);
 
+    /**
+     * Digital orders that are already delivered through the portal but still sit
+     * in `READY_TO_SHIP` on Shopee. Nothing in this platform ships an order for
+     * the seller, so these need a human before Shopee's shipping deadline turns
+     * into an automatic cancellation and a refund of an already delivered product.
+     */
+    const awaitingShipment = await db
+      .select({
+        orderSn: schema.orders.orderSn,
+        state: schema.orders.state,
+        shopeeStatus: schema.orders.shopeeStatus,
+        createdAt: schema.orders.createdAt,
+        storeLabel: schema.shopeeStores.label,
+      })
+      .from(schema.orders)
+      .innerJoin(schema.shopeeStores, sql`${schema.shopeeStores.id} = ${schema.orders.storeId}`)
+      .where(sql`${schema.orders.shopeeStatus} = 'READY_TO_SHIP' and ${schema.orders.state} in ('FULFILLED','CLAIMED','COMPLETED')`)
+      .orderBy(schema.orders.createdAt)
+      .limit(50);
+
+    const oldestHours = awaitingShipment[0]?.createdAt
+      ? Math.round((Date.now() - awaitingShipment[0].createdAt.getTime()) / 3_600_000)
+      : null;
+
     const attempts = await recentClaimAttempts(ctx.deps, 10);
 
     const alerts: Array<{ level: "warning" | "critical"; code: string; message: string }> = [];
@@ -254,6 +278,13 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
     const expiring = tokenHealth.filter((row) => row.expiresAt && row.expiresAt.getTime() - Date.now() < 30 * 60_000);
     if (expiring.length > 0) {
       alerts.push({ level: "warning", code: "TOKEN_EXPIRING", message: `${expiring.length} token toko akan kedaluwarsa dalam 30 menit` });
+    }
+    if (awaitingShipment.length > 0) {
+      alerts.push({
+        level: "warning",
+        code: "AWAITING_SHIPMENT",
+        message: `${awaitingShipment.length} pesanan sudah diklaim tapi belum ditandai dikirim di Shopee (tertua ${oldestHours} jam)`,
+      });
     }
     const errored = tokenHealth.filter((row) => row.status === "ERROR");
     if (errored.length > 0) alerts.push({ level: "critical", code: "STORE_ERROR", message: `${errored.length} toko bermasalah: ${errored.map((row) => row.label).join(", ")}` });
@@ -275,6 +306,17 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         minutesLeft: row.expiresAt ? Math.round((row.expiresAt.getTime() - Date.now()) / 60_000) : null,
       })),
       unmapped: { items: Number(unmappedItems?.total ?? 0), listings: Number(unmappedListings?.total ?? 0) },
+      shipping: {
+        awaitingShipment: awaitingShipment.length,
+        oldestHours,
+        sample: awaitingShipment.slice(0, 5).map((row) => ({
+          orderSn: row.orderSn,
+          state: row.state,
+          shopeeStatus: row.shopeeStatus,
+          storeLabel: row.storeLabel,
+          hours: Math.round((Date.now() - row.createdAt.getTime()) / 3_600_000),
+        })),
+      },
       attempts,
       alerts,
       gatewayMode: ctx.config.gatewayMode,

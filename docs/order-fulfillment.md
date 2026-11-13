@@ -151,6 +151,25 @@ Delivery kinds:
 Limits: `digital_products.max_deliveries` reveals per claim (default 3), `claim.maxDownloadsPerFulfillment`
 file downloads per claim (default 5). Both are configurable in Settings.
 
+## The Shopee side of the order
+
+Claiming is an internal event. The platform writes `orders.state`, `claims`, `fulfillments` and
+`order_events`; it never writes anything back to Shopee, so a claimed order stays whatever Shopee
+thinks it is. In practice that means an order the buyer has already collected can still show
+**Perlu Dikirim / READY_TO_SHIP** in the seller centre.
+
+That is not cosmetic: Shopee cancels an order that the seller never ships, and the buyer gets a refund
+for a product they already received. Someone has to mark those orders shipped, and the platform does not
+do it for you:
+
+- Monitoring raises `AWAITING_SHIPMENT` with the count and the age of the oldest order, and lists the
+  order numbers, so this is not discovered after the cancellation.
+- The seller marks them shipped in the Shopee seller centre, or the shop uses a delivery channel that
+  does not require shipping at all.
+- Automating it would mean calling Shopee's logistics `ship_order` on the seller's behalf, which needs
+  the order's logistics channel and a tracking number; that is a business decision, not a default, and
+  it is deliberately not implemented.
+
 ## Retries and dead letters
 
 - Backoff: 30 s × 2^(attempt−1), capped at 30 minutes, six attempts by default.

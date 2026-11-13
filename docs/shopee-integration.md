@@ -111,6 +111,14 @@ recorded and ignored, visible in Monitoring.
   accepting unauthenticated ones. Outside production the push is accepted and logged as unverified, so
   the fixture demo keeps working.
 
+## What this platform does not call
+
+Order handling is read-only toward Shopee. The only writes are OAuth token exchange and refresh; there
+is no `ship_order`, no cancellation, no price or stock update. A digital order therefore stays in
+`READY_TO_SHIP` on Shopee until the seller ships it there, even after the buyer has collected the
+product through the portal. Monitoring surfaces those orders (`AWAITING_SHIPMENT`) because Shopee
+cancels an unshipped order, and that would refund a product that was already delivered.
+
 ## Going live: the remaining steps
 
 1. **Partner app.** In the Shopee Open Platform console, create/approve the app for the production

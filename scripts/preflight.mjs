@@ -135,9 +135,11 @@ function checkEnvironment() {
 
   if (env.NODE_ENV === "production") ok("NODE_ENV", "production");
   else
+    // The value itself is not echoed: a probe that prints environment values is a probe
+    // that ends up in a pasted transcript, and the operator already has the .env.
     warn(
       "NODE_ENV",
-      `${env.NODE_ENV ?? "unset"}: secure cookies and strict CORS behave differently`,
+      "not production: secure cookies and strict CORS behave differently",
     );
 
   if (env.SESSION_COOKIE_SECURE === "true") ok("SESSION_COOKIE_SECURE", "true");
@@ -145,10 +147,10 @@ function checkEnvironment() {
 
   for (const name of ["ADMIN_ORIGIN", "CLAIM_ORIGIN", "API_PUBLIC_ORIGIN"]) {
     const value = env[name] ?? "";
-    if (value.startsWith("https://")) ok(name, value);
+    if (value.startsWith("https://")) ok(name, "https");
     else if (env.NODE_ENV === "production")
-      fail(name, `${value || "unset"} must be https in production`);
-    else warn(name, value || "unset");
+      fail(name, "unset or not https: required in production");
+    else warn(name, "unset or not https: fine for local work only");
   }
 
   const pushUrl = env.SHOPEE_PUSH_URL ?? "";
@@ -185,11 +187,7 @@ function checkEnvironment() {
     else fail("SHOPEE_PARTNER_KEY", "missing or a placeholder");
 
     if (env.SHOPEE_ENV === "production") ok("SHOPEE_ENV", "production");
-    else
-      warn(
-        "SHOPEE_ENV",
-        `${env.SHOPEE_ENV ?? "sandbox"}: orders will not match the live shop`,
-      );
+    else warn("SHOPEE_ENV", "sandbox: orders will not match the live shop");
 
     if (env.SHOPEE_PUSH_TEST_PARTNER_KEY)
       warn(
@@ -200,7 +198,7 @@ function checkEnvironment() {
     console.log("\nshopee live credentials");
     warn(
       "SHOPEE_GATEWAY_MODE",
-      `${env.SHOPEE_GATEWAY_MODE ?? "fixture"}: the pipeline runs against fixtures, not Shopee`,
+      "fixture: the pipeline runs against fixtures, not Shopee",
     );
   }
 }

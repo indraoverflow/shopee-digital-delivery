@@ -38,7 +38,8 @@ export type VerificationFailure =
   | "TOO_MANY_ATTEMPTS";
 
 export type VerificationResult =
-  | { ok: true; method: "USERNAME" | "USERNAME_PHONE" }
+  /** MANUAL is granted by the caller after an operator approved the order. */
+  | { ok: true; method: "USERNAME" | "USERNAME_PHONE" | "MANUAL" }
   | { ok: false; reason: VerificationFailure };
 
 const normaliseUsername = (value: string): string => value.trim().toLowerCase();
@@ -50,7 +51,10 @@ const digitsOf = (value: string): string => value.replace(/\D/g, "");
  * Only the visible digits are compared, and only when at least four of them
  * are visible: fewer would make a guess cheap.
  */
-export function phoneSuffixMatches(maskedPhone: string, suffix: string): boolean {
+export function phoneSuffixMatches(
+  maskedPhone: string,
+  suffix: string,
+): boolean {
   const visible = digitsOf(maskedPhone);
   const provided = digitsOf(suffix);
   if (provided.length < 4) return false;
@@ -68,34 +72,49 @@ export function verifyBuyer(
     return { ok: false, reason: "ORDER_NOT_CLAIMABLE" };
   }
 
-  const expectedUsername = facts.buyerUsername ? normaliseUsername(facts.buyerUsername) : "";
-  const providedUsername = input.buyerUsername ? normaliseUsername(input.buyerUsername) : "";
+  const expectedUsername = facts.buyerUsername
+    ? normaliseUsername(facts.buyerUsername)
+    : "";
+  const providedUsername = input.buyerUsername
+    ? normaliseUsername(input.buyerUsername)
+    : "";
 
   if (!expectedUsername) return { ok: false, reason: "USERNAME_MISSING" };
   if (!providedUsername) return { ok: false, reason: "USERNAME_MISSING" };
-  if (expectedUsername !== providedUsername) return { ok: false, reason: "USERNAME_MISMATCH" };
+  if (expectedUsername !== providedUsername)
+    return { ok: false, reason: "USERNAME_MISMATCH" };
 
   if (policy === "USERNAME") return { ok: true, method: "USERNAME" };
 
   const maskedPhone = facts.buyerPhoneMasked ?? "";
-  if (digitsOf(maskedPhone).length < 4) return { ok: false, reason: "PHONE_UNAVAILABLE" };
+  if (digitsOf(maskedPhone).length < 4)
+    return { ok: false, reason: "PHONE_UNAVAILABLE" };
 
   const suffix = input.phoneSuffix ?? "";
-  if (digitsOf(suffix).length < 4) return { ok: false, reason: "PHONE_SUFFIX_INVALID" };
-  if (!phoneSuffixMatches(maskedPhone, suffix)) return { ok: false, reason: "PHONE_SUFFIX_MISMATCH" };
+  if (digitsOf(suffix).length < 4)
+    return { ok: false, reason: "PHONE_SUFFIX_INVALID" };
+  if (!phoneSuffixMatches(maskedPhone, suffix))
+    return { ok: false, reason: "PHONE_SUFFIX_MISMATCH" };
 
   return { ok: true, method: "USERNAME_PHONE" };
 }
 
 /** Human-readable text for the portal; never leaks the expected value. */
 export const FAILURE_MESSAGES: Record<VerificationFailure, string> = {
-  ORDER_NOT_FOUND: "Nomor pesanan tidak ditemukan. Periksa kembali nomor pesanan Shopee Anda.",
+  ORDER_NOT_FOUND:
+    "Nomor pesanan tidak ditemukan. Periksa kembali nomor pesanan Shopee Anda.",
   USERNAME_MISMATCH: "Username pembeli tidak cocok dengan pesanan ini.",
   USERNAME_MISSING: "Username pembeli wajib diisi.",
-  PHONE_SUFFIX_MISMATCH: "4 digit terakhir nomor HP tidak cocok dengan pesanan ini.",
-  PHONE_SUFFIX_INVALID: "Masukkan minimal 4 digit terakhir nomor HP yang dipakai saat membeli.",
-  PHONE_UNAVAILABLE: "Pesanan ini tidak menyertakan nomor HP. Hubungi dukungan untuk verifikasi manual.",
-  ORDER_NOT_ELIGIBLE: "Pesanan belum dibayar atau sudah dibatalkan, jadi produk digital belum bisa diklaim.",
-  ORDER_NOT_CLAIMABLE: "Pesanan ini belum siap diklaim. Coba lagi beberapa saat setelah pembayaran dikonfirmasi.",
-  TOO_MANY_ATTEMPTS: "Terlalu banyak percobaan. Tunggu beberapa menit sebelum mencoba lagi.",
+  PHONE_SUFFIX_MISMATCH:
+    "4 digit terakhir nomor HP tidak cocok dengan pesanan ini.",
+  PHONE_SUFFIX_INVALID:
+    "Masukkan minimal 4 digit terakhir nomor HP yang dipakai saat membeli.",
+  PHONE_UNAVAILABLE:
+    "Pesanan ini tidak menyertakan nomor HP. Hubungi dukungan untuk verifikasi manual.",
+  ORDER_NOT_ELIGIBLE:
+    "Pesanan belum dibayar atau sudah dibatalkan, jadi produk digital belum bisa diklaim.",
+  ORDER_NOT_CLAIMABLE:
+    "Pesanan ini belum siap diklaim. Coba lagi beberapa saat setelah pembayaran dikonfirmasi.",
+  TOO_MANY_ATTEMPTS:
+    "Terlalu banyak percobaan. Tunggu beberapa menit sebelum mencoba lagi.",
 };

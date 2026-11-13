@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  bigserial,
   boolean,
   index,
   integer,
@@ -19,13 +20,25 @@ import {
  * in a report, and timestamps are always `timestamptz`: the worker, the API
  * and the database may sit in different zones.
  */
-const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
-const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
+const createdAt = () =>
+  timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+const updatedAt = () =>
+  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
 
 /* ------------------------------------------------------------------ enums */
 
-export const userRoleEnum = pgEnum("user_role", ["OWNER", "ADMIN", "OPERATOR", "VIEWER"]);
-export const storeStatusEnum = pgEnum("store_status", ["PENDING", "CONNECTED", "ERROR", "DISCONNECTED"]);
+export const userRoleEnum = pgEnum("user_role", [
+  "OWNER",
+  "ADMIN",
+  "OPERATOR",
+  "VIEWER",
+]);
+export const storeStatusEnum = pgEnum("store_status", [
+  "PENDING",
+  "CONNECTED",
+  "ERROR",
+  "DISCONNECTED",
+]);
 export const shopeeEnvEnum = pgEnum("shopee_env", ["SANDBOX", "PRODUCTION"]);
 
 /**
@@ -45,7 +58,11 @@ export const orderStateEnum = pgEnum("order_state", [
   "FAILED",
 ]);
 
-export const mappingStatusEnum = pgEnum("mapping_status", ["UNMAPPED", "MAPPED", "AMBIGUOUS"]);
+export const mappingStatusEnum = pgEnum("mapping_status", [
+  "UNMAPPED",
+  "MAPPED",
+  "AMBIGUOUS",
+]);
 export const fulfillmentStatusEnum = pgEnum("fulfillment_status", [
   "PENDING",
   "CLAIMABLE",
@@ -54,13 +71,52 @@ export const fulfillmentStatusEnum = pgEnum("fulfillment_status", [
   "EXPIRED",
   "FAILED",
 ]);
-export const claimStatusEnum = pgEnum("claim_status", ["ISSUED", "COMPLETED", "REVOKED", "EXPIRED", "BLOCKED"]);
-export const deliveryKindEnum = pgEnum("delivery_kind", ["FILE", "LINK", "CODE", "CREDENTIALS", "INSTRUCTIONS"]);
-export const digitalProductStatusEnum = pgEnum("digital_product_status", ["DRAFT", "ACTIVE", "ARCHIVED"]);
-export const jobStatusEnum = pgEnum("job_status", ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "DEAD"]);
+export const claimStatusEnum = pgEnum("claim_status", [
+  "ISSUED",
+  "COMPLETED",
+  "REVOKED",
+  "EXPIRED",
+  "BLOCKED",
+]);
+export const deliveryKindEnum = pgEnum("delivery_kind", [
+  "FILE",
+  "LINK",
+  "CODE",
+  "CREDENTIALS",
+  "INSTRUCTIONS",
+]);
+export const digitalProductStatusEnum = pgEnum("digital_product_status", [
+  "DRAFT",
+  "ACTIVE",
+  "ARCHIVED",
+]);
+export const jobStatusEnum = pgEnum("job_status", [
+  "QUEUED",
+  "RUNNING",
+  "SUCCEEDED",
+  "FAILED",
+  "DEAD",
+]);
 export const syncTypeEnum = pgEnum("sync_type", ["PRODUCTS", "ORDERS"]);
-export const webhookStatusEnum = pgEnum("webhook_status", ["RECEIVED", "PROCESSED", "DUPLICATE", "IGNORED", "FAILED"]);
-export const verificationMethodEnum = pgEnum("verification_method", ["USERNAME", "USERNAME_PHONE", "MANUAL"]);
+export const webhookStatusEnum = pgEnum("webhook_status", [
+  "RECEIVED",
+  "PROCESSED",
+  "DUPLICATE",
+  "IGNORED",
+  "FAILED",
+]);
+export const verificationMethodEnum = pgEnum("verification_method", [
+  "USERNAME",
+  "USERNAME_PHONE",
+  "MANUAL",
+]);
+/** A buyer asking a human to vouch for them when the automatic factors cannot be met. */
+export const claimRequestStatusEnum = pgEnum("claim_request_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+  "EXPIRED",
+]);
 
 /* ------------------------------------------------------- identity & access */
 
@@ -75,10 +131,44 @@ export const users = pgTable(
     role: userRoleEnum("role").notNull().default("VIEWER"),
     isActive: boolean("is_active").notNull().default(true),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    /** TOTP secret, encrypted with APP_ENCRYPTION_KEY; null until enrolled. */
+    totpSecretEnc: text("totp_secret_enc"),
+    /** Set when the first valid code confirmed the enrolment. */
+    totpEnabledAt: timestamp("totp_enabled_at", { withTimezone: true }),
+    /** sha256 of each unused recovery code. */
+    recoveryCodeHashes: jsonb("recovery_code_hashes").$type<string[]>(),
+    /** Bumped on every password change so old sessions cannot be reused. */
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => [uniqueIndex("users_email_key").on(sql`lower(${table.email})`)],
+);
+
+/**
+ * A login that produced a correct password but still needs the second factor.
+ * The row is short lived and single use, so an intercepted cookie from this
+ * stage cannot be replayed after the real session exists.
+ */
+export const loginChallenges = pgTable(
+  "login_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("login_challenges_token_key").on(table.tokenHash),
+    index("login_challenges_user_idx").on(table.userId),
+  ],
 );
 
 /** Opaque session tokens: the cookie holds the token, the row holds its sha256. */
@@ -127,16 +217,30 @@ export const shopeeStores = pgTable(
     supportEmail: text("support_email"),
     supportWhatsapp: text("support_whatsapp"),
     /** USERNAME compares the Shopee buyer_username; USERNAME_PHONE adds the phone suffix. */
-    verificationPolicy: verificationMethodEnum("verification_policy").notNull().default("USERNAME"),
+    verificationPolicy: verificationMethodEnum("verification_policy")
+      .notNull()
+      .default("USERNAME"),
     /** Shopee order_status values treated as paid and fulfilable. */
-    eligibleStatuses: jsonb("eligible_statuses").$type<string[]>().notNull().default(sql`'["READY_TO_SHIP","PROCESSED","SHIPPED","TO_CONFIRM_RECEIVE","COMPLETED"]'::jsonb`),
-    lastProductSyncAt: timestamp("last_product_sync_at", { withTimezone: true }),
+    eligibleStatuses: jsonb("eligible_statuses")
+      .$type<string[]>()
+      .notNull()
+      .default(
+        sql`'["READY_TO_SHIP","PROCESSED","SHIPPED","TO_CONFIRM_RECEIVE","COMPLETED"]'::jsonb`,
+      ),
+    lastProductSyncAt: timestamp("last_product_sync_at", {
+      withTimezone: true,
+    }),
     lastOrderSyncAt: timestamp("last_order_sync_at", { withTimezone: true }),
     lastError: text("last_error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [uniqueIndex("shopee_stores_env_shop_key").on(table.environment, table.shopId)],
+  (table) => [
+    uniqueIndex("shopee_stores_env_shop_key").on(
+      table.environment,
+      table.shopId,
+    ),
+  ],
 );
 
 /**
@@ -179,13 +283,20 @@ export const shopeeProducts = pgTable(
     priceMax: numeric("price_max", { precision: 14, scale: 2 }),
     /** Raw Shopee payload, kept for diagnosis without another API call. */
     raw: jsonb("raw").$type<Record<string, unknown>>(),
-    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+    syncedAt: timestamp("synced_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     /** Soft delete: a product removed in Shopee keeps its mapping history. */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [uniqueIndex("shopee_products_store_item_key").on(table.storeId, table.itemId)],
+  (table) => [
+    uniqueIndex("shopee_products_store_item_key").on(
+      table.storeId,
+      table.itemId,
+    ),
+  ],
 );
 
 export const shopeeVariations = pgTable(
@@ -201,11 +312,18 @@ export const shopeeVariations = pgTable(
     price: numeric("price", { precision: 14, scale: 2 }),
     stock: integer("stock"),
     raw: jsonb("raw").$type<Record<string, unknown>>(),
-    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+    syncedAt: timestamp("synced_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (table) => [uniqueIndex("shopee_variations_product_model_key").on(table.productId, table.modelId)],
+  (table) => [
+    uniqueIndex("shopee_variations_product_model_key").on(
+      table.productId,
+      table.modelId,
+    ),
+  ],
 );
 
 /* ------------------------------------------------------- digital products */
@@ -248,7 +366,9 @@ export const digitalProductAssets = pgTable(
     sha256: text("sha256").notNull(),
     createdAt: createdAt(),
   },
-  (table) => [index("digital_product_assets_product_idx").on(table.digitalProductId)],
+  (table) => [
+    index("digital_product_assets_product_idx").on(table.digitalProductId),
+  ],
 );
 
 /**
@@ -272,7 +392,10 @@ export const digitalProductCodes = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    index("digital_product_codes_pool_idx").on(table.digitalProductId, table.assignedAt),
+    index("digital_product_codes_pool_idx").on(
+      table.digitalProductId,
+      table.assignedAt,
+    ),
     uniqueIndex("digital_product_codes_claim_key").on(table.assignedClaimId),
   ],
 );
@@ -290,7 +413,10 @@ export const productMappings = pgTable(
       .notNull()
       .references(() => shopeeProducts.id, { onDelete: "cascade" }),
     /** Null maps the whole listing, used when the listing has no variations. */
-    shopeeVariationId: uuid("shopee_variation_id").references(() => shopeeVariations.id, { onDelete: "cascade" }),
+    shopeeVariationId: uuid("shopee_variation_id").references(
+      () => shopeeVariations.id,
+      { onDelete: "cascade" },
+    ),
     digitalProductId: uuid("digital_product_id")
       .notNull()
       .references(() => digitalProducts.id, { onDelete: "restrict" }),
@@ -338,7 +464,9 @@ export const orders = pgTable(
     /** Why the order may not be claimed; null when it may. */
     ineligibleReason: text("ineligible_reason"),
     raw: jsonb("raw").$type<Record<string, unknown>>(),
-    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+    syncedAt: timestamp("synced_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -366,8 +494,13 @@ export const orderItems = pgTable(
     quantity: integer("quantity").notNull().default(1),
     amount: numeric("amount", { precision: 14, scale: 2 }),
     imageUrl: text("image_url"),
-    mappingStatus: mappingStatusEnum("mapping_status").notNull().default("UNMAPPED"),
-    digitalProductId: uuid("digital_product_id").references(() => digitalProducts.id, { onDelete: "set null" }),
+    mappingStatus: mappingStatusEnum("mapping_status")
+      .notNull()
+      .default("UNMAPPED"),
+    digitalProductId: uuid("digital_product_id").references(
+      () => digitalProducts.id,
+      { onDelete: "set null" },
+    ),
     /** Why the line could not be mapped, surfaced in the admin order page. */
     unmappedReason: text("unmapped_reason"),
     raw: jsonb("raw").$type<Record<string, unknown>>(),
@@ -394,7 +527,9 @@ export const orderEvents = pgTable(
     payload: jsonb("payload").$type<Record<string, unknown>>(),
     createdAt: createdAt(),
   },
-  (table) => [index("order_events_order_idx").on(table.orderId, table.createdAt)],
+  (table) => [
+    index("order_events_order_idx").on(table.orderId, table.createdAt),
+  ],
 );
 
 /* -------------------------------------------------- fulfilment and claims */
@@ -427,7 +562,10 @@ export const fulfillments = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    uniqueIndex("fulfillments_item_product_key").on(table.orderItemId, table.digitalProductId),
+    uniqueIndex("fulfillments_item_product_key").on(
+      table.orderItemId,
+      table.digitalProductId,
+    ),
     index("fulfillments_status_idx").on(table.status),
     index("fulfillments_order_idx").on(table.orderId),
   ],
@@ -473,7 +611,10 @@ export const claims = pgTable(
       .notNull()
       .references(() => digitalProducts.id, { onDelete: "restrict" }),
     /** The verified session that delivered this claim, null once pruned. */
-    claimSessionId: uuid("claim_session_id").references(() => claimSessions.id, { onDelete: "set null" }),
+    claimSessionId: uuid("claim_session_id").references(
+      () => claimSessions.id,
+      { onDelete: "set null" },
+    ),
     status: claimStatusEnum("status").notNull().default("ISSUED"),
     verificationMethod: verificationMethodEnum("verification_method").notNull(),
     deliveriesUsed: integer("deliveries_used").notNull().default(0),
@@ -487,7 +628,10 @@ export const claims = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    uniqueIndex("claims_fulfillment_session_key").on(table.fulfillmentId, table.claimSessionId),
+    uniqueIndex("claims_fulfillment_session_key").on(
+      table.fulfillmentId,
+      table.claimSessionId,
+    ),
     index("claims_order_idx").on(table.orderId),
     index("claims_status_idx").on(table.status),
   ],
@@ -531,7 +675,10 @@ export const deliveryLogs = pgTable(
     ip: text("ip"),
     createdAt: createdAt(),
   },
-  (table) => [index("delivery_logs_claim_idx").on(table.claimId), index("delivery_logs_created_idx").on(table.createdAt)],
+  (table) => [
+    index("delivery_logs_claim_idx").on(table.claimId),
+    index("delivery_logs_created_idx").on(table.createdAt),
+  ],
 );
 
 /* ------------------------------------------------------------ operations */
@@ -554,7 +701,10 @@ export const syncJobs = pgTable(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (table) => [index("sync_jobs_store_idx").on(table.storeId, table.createdAt), index("sync_jobs_status_idx").on(table.status)],
+  (table) => [
+    index("sync_jobs_store_idx").on(table.storeId, table.createdAt),
+    index("sync_jobs_status_idx").on(table.status),
+  ],
 );
 
 export const webhookEvents = pgTable(
@@ -565,7 +715,9 @@ export const webhookEvents = pgTable(
     bodyHash: text("body_hash").notNull(),
     code: integer("code"),
     shopId: bigint("shop_id", { mode: "number" }),
-    storeId: uuid("store_id").references(() => shopeeStores.id, { onDelete: "set null" }),
+    storeId: uuid("store_id").references(() => shopeeStores.id, {
+      onDelete: "set null",
+    }),
     orderSn: text("order_sn"),
     signatureValid: boolean("signature_valid").notNull(),
     status: webhookStatusEnum("status").notNull().default("RECEIVED"),
@@ -574,7 +726,10 @@ export const webhookEvents = pgTable(
     processedAt: timestamp("processed_at", { withTimezone: true }),
     receivedAt: createdAt(),
   },
-  (table) => [uniqueIndex("webhook_events_body_hash_key").on(table.bodyHash), index("webhook_events_received_idx").on(table.receivedAt)],
+  (table) => [
+    uniqueIndex("webhook_events_body_hash_key").on(table.bodyHash),
+    index("webhook_events_received_idx").on(table.receivedAt),
+  ],
 );
 
 /**
@@ -601,7 +756,11 @@ export const jobs = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    uniqueIndex("jobs_dedupe_key").on(table.dedupeKey).where(sql`${table.dedupeKey} is not null and ${table.status} in ('QUEUED','RUNNING')`),
+    uniqueIndex("jobs_dedupe_key")
+      .on(table.dedupeKey)
+      .where(
+        sql`${table.dedupeKey} is not null and ${table.status} in ('QUEUED','RUNNING')`,
+      ),
     index("jobs_poll_idx").on(table.status, table.runAt),
   ],
 );
@@ -618,9 +777,60 @@ export const auditLogs = pgTable(
     targetId: text("target_id"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     ip: text("ip"),
+    /**
+     * Hash chain: each row covers the previous row's hash, so deleting or
+     * editing a row is detectable by replaying the chain.
+     */
+    prevHash: text("prev_hash"),
+    entryHash: text("entry_hash"),
+    seq: bigserial("seq", { mode: "number" }).notNull().unique(),
     createdAt: createdAt(),
   },
-  (table) => [index("audit_logs_created_idx").on(table.createdAt), index("audit_logs_action_idx").on(table.action)],
+  (table) => [
+    index("audit_logs_created_idx").on(table.createdAt),
+    index("audit_logs_action_idx").on(table.action),
+  ],
+);
+
+/**
+ * Manual verification queue. A buyer who cannot satisfy the automatic factors
+ * (usually because Shopee returned no phone) asks an operator to check the
+ * order out of band. Approval opens a time-boxed window in which the username
+ * alone is accepted for that order, and every step is recorded.
+ */
+export const claimRequests = pgTable(
+  "claim_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    storeId: uuid("store_id")
+      .notNull()
+      .references(() => shopeeStores.id, { onDelete: "cascade" }),
+    status: claimRequestStatusEnum("status").notNull().default("PENDING"),
+    /** What the buyer told the operator, e.g. the Shopee account email. */
+    contact: text("contact").notNull(),
+    note: text("note"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewNote: text("review_note"),
+    /** While set and in the future, username-only verification is accepted. */
+    approvedUntil: timestamp("approved_until", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("claim_requests_status_idx").on(table.status),
+    index("claim_requests_order_idx").on(table.orderId),
+    uniqueIndex("claim_requests_pending_key")
+      .on(table.orderId)
+      .where(sql`${table.status} = 'PENDING'`),
+  ],
 );
 
 export const systemSettings = pgTable("system_settings", {
@@ -642,6 +852,8 @@ export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type Fulfillment = typeof fulfillments.$inferSelect;
 export type Claim = typeof claims.$inferSelect;
+export type ClaimRequest = typeof claimRequests.$inferSelect;
+export type LoginChallenge = typeof loginChallenges.$inferSelect;
 export type ClaimSession = typeof claimSessions.$inferSelect;
 export type DeliveryLog = typeof deliveryLogs.$inferSelect;
 export type SyncJob = typeof syncJobs.$inferSelect;

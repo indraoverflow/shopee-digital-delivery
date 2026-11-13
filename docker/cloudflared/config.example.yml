@@ -24,6 +24,14 @@ ingress:
       connectTimeout: 10s
       httpHostHeader: api.example.com
 
+  # Shopee's test environment posts and redirects here. Separate hostname, separate API
+  # process (SHOPEE_ENV=sandbox), so a test code is never exchanged against production.
+  - hostname: sandbox-api.example.com
+    service: http://api-sandbox:4000
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: sandbox-api.example.com
+
   - hostname: claim.example.com
     service: http://web:3300
     originRequest:

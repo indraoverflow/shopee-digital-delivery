@@ -16,10 +16,20 @@ partner console.
 
 ## Phase 1: what the Shopee application actually needs
 
-Shopee asks for two URLs, and both must answer over HTTPS:
+Shopee keeps two redirect domains, one per environment, and both must answer over HTTPS:
 
-    push (webhook)  https://api.example.com/webhook/shopee
-    redirect        https://api.example.com/api/integration/shopee/callback
+    Test Redirect URL Domain   https://sandbox-api.example.com
+    Live Redirect URL Domain   https://api.example.com
+    push (webhook)             https://api.example.com/webhook/shopee
+
+The test domain is served by a second API process started with `SHOPEE_ENV=sandbox`. This is
+not decoration: the environment decides which Shopee host the OAuth code is exchanged
+against, so a single process pointed at production would fail every sandbox callback with
+`exchange_failed`. Two processes from one image cost about 25 MB.
+
+Some console versions accept only a domain in those two fields and append their own path.
+If that is what you see, copy the exact path the console shows and put the full URL into
+`SHOPEE_REDIRECT_URL`; the code compares nothing else.
 
 Nothing else on the platform has to move for the application. Keep `claim.qansa.web.id` and
 `admin.qansa.web.id` where they are until the partner app is approved: fewer moving parts
@@ -42,11 +52,12 @@ Zero Trust, Networks, Tunnels, "Create a tunnel", Cloudflared, name it
 Then add three public hostnames in the tunnel, all pointing at the containers that are
 already running on the same compose network:
 
-| Subdomain | Domain   | Service           |
-| --------- | -------- | ----------------- |
-| api       | example.com | `http://api:4000` |
-| claim     | example.com | `http://web:3300` |
-| admin     | example.com | `http://web:3300` |
+| Subdomain   | Domain   | Service                   |
+| ----------- | -------- | ------------------------- |
+| api         | example.com | `http://api:4000`         |
+| sandbox-api | example.com | `http://api-sandbox:4000` |
+| claim       | example.com | `http://web:3300`         |
+| admin       | example.com | `http://web:3300`         |
 
 If you prefer the tunnel to be defined in git instead of the dashboard, use
 `docker/cloudflared/config.example.yml` with a credentials file, same as
@@ -54,12 +65,14 @@ If you prefer the tunnel to be defined in git instead of the dashboard, use
 
 ### 3. Start the second tunnel
 
-    docker compose -f docker-compose.yml -f docker-compose.cloudflare-tunnel.yml up -d cloudflared-serah
+    docker compose -f docker-compose.yml -f docker-compose.cloudflare-tunnel.yml \
+      -f docker-compose.shopee-sandbox.yml up -d cloudflared-serah api-sandbox
 
 Check it from outside, not from the server:
 
     curl -sS -o /dev/null -w '%{http_code}\n' https://api.example.com/health
     curl -sS -o /dev/null -w '%{http_code}\n' https://api.example.com/ready
+    curl -sS -o /dev/null -w '%{http_code}\n' https://sandbox-api.example.com/health
 
 Both must be 200 before anything is submitted to Shopee. A webhook that answers 404 or a
 Cloudflare error page is the most common reason an application is sent back.
@@ -68,6 +81,9 @@ Cloudflare error page is the most common reason an application is sent back.
 
     SHOPEE_PUSH_URL=https://api.example.com/webhook/shopee
     SHOPEE_REDIRECT_URL=https://api.example.com/api/integration/shopee/callback
+
+`SHOPEE_ENV` stays `production` in `.env`; the sandbox instance overrides it in
+`docker-compose.shopee-sandbox.yml` and gets its own redirect URL there.
 
 Restart `api` after changing them; `SHOPEE_PUSH_URL` is also what the preflight probe signs
 against, so a mismatch shows up as a failing check rather than as silent webhook rejects.
@@ -88,15 +104,16 @@ must keep working until those claims expire.
 Fill these in the partner console. The URLs are the ones above, exactly, including the path
 and without a trailing slash.
 
-| Field        | Value                                                                          |
-| ------------ | ------------------------------------------------------------------------------ |
-| App name     | Serah Terima                                                                   |
-| App type     | ERP / Seller In House System, whichever the console offers as order management |
-| Redirect URL | `https://api.example.com/api/integration/shopee/callback`                         |
-| Push URL     | `https://api.example.com/webhook/shopee`                                          |
-| Permissions  | Shop, Order, Product, Logistics, Auth: see `docs/live-shopee-checklist.md`     |
-| Platform     | Web                                                                            |
-| Data handled | Order and product data for the seller's own shop, no buyer contact data        |
+| Field                    | Value                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| App name                 | Serah Terima                                                                   |
+| App type                 | ERP / Seller In House System, whichever the console offers as order management |
+| Test Redirect URL Domain | `https://sandbox-api.example.com`                                                 |
+| Live Redirect URL Domain | `https://api.example.com`                                                         |
+| Push URL                 | `https://api.example.com/webhook/shopee`                                          |
+| Permissions              | Shop, Order, Product, Logistics, Auth: see `docs/live-shopee-checklist.md`     |
+| Platform                 | Web                                                                            |
+| Data handled             | Order and product data for the seller's own shop, no buyer contact data        |
 
 A short description that matches what the code does, avoid claiming anything else:
 

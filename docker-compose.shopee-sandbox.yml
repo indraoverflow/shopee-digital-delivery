@@ -1,0 +1,41 @@
+# Sandbox API for the Shopee partner application.
+#
+# Shopee registers two redirect URLs, one for its test environment and one for live. The
+# environment is chosen at boot (SHOPEE_ENV decides the API host), so one process cannot
+# answer both: a sandbox `code` exchanged against the production host fails, and the seller
+# sees "exchange_failed" with no explanation. Two processes from the same image is the
+# honest arrangement, and it costs about 25 MB of memory.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflare-tunnel.yml \
+#     -f docker-compose.shopee-sandbox.yml up -d
+#
+# The sandbox instance shares the database, the encryption key and the assets volume with
+# the live one; only the Shopee environment and the redirect URL differ. Stores connected
+# through it are stored with environment SANDBOX, so a sandbox shop can never be mistaken
+# for a real one.
+
+services:
+  api-sandbox:
+    image: qansa-delivery-api:latest
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-qansa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-qansa_delivery}
+      MIGRATIONS_DIR: /app/migrations
+      # The whole point of this service.
+      SHOPEE_ENV: sandbox
+      SHOPEE_REDIRECT_URL: https://sandbox-api.example.com/api/integration/shopee/callback
+      # Nothing here is reachable from a browser except through the tunnel, so no ports.
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    volumes:
+      - uploads:/data/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6

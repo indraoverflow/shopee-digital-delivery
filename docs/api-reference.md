@@ -196,10 +196,12 @@ rejected by the unique index, not silently merged.
 | POST   | `/api/admin/orders/:id/resync` | `order:write` | Requeue the pipeline for one order                          |
 | POST   | `/api/admin/orders/:id/ship`   | `order:write` | Arrange shipment in Shopee (logistics `ship_order`)          |
 
-`POST /api/admin/orders/:id/ship` is the only route that writes back to Shopee. It answers
-`{ ok: true, shopeeStatus: "SHIPPED", packageNumber, alreadyShipped }`, is idempotent (a second call
-reports `alreadyShipped: true` without calling Shopee), refuses an order that was not delivered yet
-(`ORDER_NOT_READY`, 409), and maps a channel that cannot be arranged through the API
+`POST /api/admin/orders/:id/ship` is the only route that writes back to Shopee. Body:
+`{ "trackingNumber": "DIGITAL-260101PXL0001" }`, required for a non-integrated channel (jasa kirim toko)
+and rejected with `TRACKING_NUMBER_REQUIRED` (422) when missing. It answers
+`{ ok: true, shopeeStatus: "SHIPPED", packageNumber, trackingNumber, alreadyShipped }`, is idempotent
+(a second call reports `alreadyShipped: true` without calling Shopee), refuses an order that was not
+delivered yet (`ORDER_NOT_READY`, 409), and maps a channel that cannot be arranged through the API
 (`error_logistics_not_supported`) to a message telling the operator to ship it in the seller centre.
 `order:write` belongs to OWNER, ADMIN and OPERATOR; a VIEWER can read orders but not act on them.
 

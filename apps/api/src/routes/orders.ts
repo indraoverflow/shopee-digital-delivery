@@ -164,13 +164,23 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
    * Without this, Shopee cancels the unshipped order and refunds a product that
    * was delivered. Operator action, audited, never a side effect of claiming.
    */
-  app.post<{ Params: { id: string } }>("/api/admin/orders/:id/ship", { preHandler: write }, async (request) => {
-    const user = request.user;
-    const result = await markShipped(ctx.deps, {
-      orderId: request.params.id,
-      actor: { id: user?.id ?? "system", email: user?.email ?? "system" },
-      ip: request.ip,
-    });
-    return { ok: true, ...result };
-  });
+  app.post<{ Params: { id: string }; Body: { trackingNumber?: string } | undefined }>(
+    "/api/admin/orders/:id/ship",
+    { preHandler: write },
+    async (request) => {
+      const user = request.user;
+      const raw = request.body?.trackingNumber;
+      const trackingNumber = typeof raw === "string" ? raw.trim() : null;
+      if (trackingNumber && trackingNumber.length > 64) {
+        throw new AppError("VALIDATION_ERROR", "Nomor resi terlalu panjang (maksimal 64 karakter).", 400);
+      }
+      const result = await markShipped(ctx.deps, {
+        orderId: request.params.id,
+        trackingNumber,
+        actor: { id: user?.id ?? "system", email: user?.email ?? "system" },
+        ip: request.ip,
+      });
+      return { ok: true, ...result };
+    },
+  );
 }

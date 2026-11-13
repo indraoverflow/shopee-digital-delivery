@@ -20,6 +20,8 @@ const ALREADY_SHIPPED = ["SHIPPED", "TO_CONFIRM_RECEIVE", "COMPLETED"];
 
 export interface ShipOrderInput {
   orderId: string;
+  /** The resi the seller would type in the seller centre; required by a non-integrated channel. */
+  trackingNumber?: string | null;
   actor: { id: string; email: string };
   ip?: string | null;
 }
@@ -28,6 +30,7 @@ export interface ShipOrderResult {
   orderSn: string;
   shopeeStatus: string;
   packageNumber: string | null;
+  trackingNumber: string | null;
   /** True when Shopee already had it shipped, so nothing was called. */
   alreadyShipped: boolean;
 }
@@ -45,7 +48,13 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
 
   const currentStatus = (order.shopeeStatus ?? "").toUpperCase();
   if (ALREADY_SHIPPED.includes(currentStatus)) {
-    return { orderSn: order.orderSn, shopeeStatus: order.shopeeStatus ?? currentStatus, packageNumber: null, alreadyShipped: true };
+    return {
+      orderSn: order.orderSn,
+      shopeeStatus: order.shopeeStatus ?? currentStatus,
+      packageNumber: null,
+      trackingNumber: input.trackingNumber?.trim() ?? null,
+      alreadyShipped: true,
+    };
   }
 
   if (!["FULFILLED", "CLAIMED", "COMPLETED"].includes(order.state)) {
@@ -61,10 +70,29 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
   }
 
   const { access } = await getStoreAccess(deps, store.id);
+  const storeAccess = { shopId: access.shopId, accessToken: access.accessToken };
+
+  // Ask the channel what it needs before calling ship_order: a shop that ships
+  // with its own courier (jasa kirim toko, a non-integrated channel) must be given
+  // the resi, and saying that plainly beats forwarding Shopee's parameter error.
+  const trackingNumber = input.trackingNumber?.trim() ?? "";
+  if (!trackingNumber && deps.gateway.getShippingOptions) {
+    const options = await deps.gateway.getShippingOptions(storeAccess, order.orderSn).catch((error: unknown) => {
+      const code = (error as { code?: string }).code ?? "SHIP_FAILED";
+      throw new AppError("SHIP_FAILED", `Tidak bisa membaca metode pengiriman pesanan ini: ${code}`, 502, { shopeeCode: code });
+    });
+    if (options.nonIntegrated?.needsTrackingNumber) {
+      throw new AppError(
+        "TRACKING_NUMBER_REQUIRED",
+        "Pesanan ini memakai jasa kirim toko, jadi nomor resi wajib diisi. Isi nomor resi yang sama dengan yang Anda masukkan di Seller Centre.",
+        422,
+      );
+    }
+  }
 
   let result: { shipped: boolean; packageNumber?: string | null };
   try {
-    result = await deps.gateway.shipOrder({ shopId: access.shopId, accessToken: access.accessToken }, order.orderSn);
+    result = await deps.gateway.shipOrder(storeAccess, order.orderSn, { trackingNumber: trackingNumber || null });
   } catch (error) {
     const code = (error as { code?: string }).code ?? "SHIP_FAILED";
     const message = error instanceof Error ? error.message : String(error);
@@ -90,7 +118,11 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
     await tx.insert(schema.orderEvents).values({
       orderId: order.id,
       type: "SHIP_CONFIRMED",
-      payload: { actor: input.actor.email, packageNumber: result.packageNumber ?? null },
+      payload: {
+        actor: input.actor.email,
+        packageNumber: result.packageNumber ?? null,
+        trackingNumber: trackingNumber || null,
+      },
     });
   });
 
@@ -101,7 +133,12 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
     action: "order.ship",
     targetType: "order",
     targetId: order.id,
-    metadata: { orderSn: order.orderSn, packageNumber: result.packageNumber ?? null, mode: deps.config.gatewayMode },
+    metadata: {
+      orderSn: order.orderSn,
+      packageNumber: result.packageNumber ?? null,
+      trackingNumber: trackingNumber || null,
+      mode: deps.config.gatewayMode,
+    },
     ip: input.ip ?? null,
   });
 
@@ -109,6 +146,7 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
     orderSn: order.orderSn,
     shopeeStatus: "SHIPPED",
     packageNumber: result.packageNumber ?? null,
+    trackingNumber: trackingNumber || null,
     alreadyShipped: false,
   };
 }

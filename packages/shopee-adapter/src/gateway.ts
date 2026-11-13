@@ -92,11 +92,22 @@ export interface ShopeeGateway {
   getOrders(access: StoreAccess, orderSns: string[]): Promise<NormalisedOrder[]>;
   listProducts(access: StoreAccess, options?: { maxPages?: number }): Promise<{ products: NormalisedProduct[]; truncated: boolean }>;
   /**
+   * What this order's shipping channel accepts: pickup, dropoff, or a
+   * non-integrated channel (the seller's own courier, "jasa kirim toko").
+   * Shopee wants this consulted before ship_order.
+   */
+  getShippingOptions?(access: StoreAccess, orderSn: string): Promise<ShippingOptions>;
+
+  /**
    * Arranges shipment for one order, the same click the seller would make in the
    * seller centre. Optional on purpose: a gateway that cannot ship must not be
    * silently assumed to have shipped.
    */
-  shipOrder?(access: StoreAccess, orderSn: string): Promise<{ shipped: boolean; packageNumber?: string | null }>;
+  shipOrder?(
+    access: StoreAccess,
+    orderSn: string,
+    options?: { trackingNumber?: string | null },
+  ): Promise<{ shipped: boolean; packageNumber?: string | null }>;
 }
 
 /* --------------------------------------------------------- normalisation */
@@ -287,12 +298,79 @@ export class LiveShopeeGateway implements ShopeeGateway {
    * `error_logistics_not_supported`, which the caller surfaces verbatim instead of
    * pretending the order shipped.
    */
-  async shipOrder(access: StoreAccess, orderSn: string) {
+  async getShippingOptions(access: StoreAccess, orderSn: string): Promise<ShippingOptions> {
     try {
+      const response = await this.client.shopGet<{
+        info_needed?: { pickup?: string[]; dropoff?: string[]; non_integrated?: string[] };
+        pickup?: { address_list?: Array<{ address_id: number }> };
+        dropoff?: { branch_list?: Array<{ branch_id: number }> };
+      }>("/api/v2/logistics/get_shipping_parameter", { accessToken: access.accessToken, shopId: access.shopId }, {
+        order_sn: orderSn,
+      });
+
+      const info = response?.info_needed ?? {};
+      const options: ShippingOptions = {};
+      // Shopee returns the blocks it wants filled; "non_integrated" is the
+      // seller's own courier, which is what a digital shop ships with.
+      if (Array.isArray(info.pickup)) {
+        options.pickup = {
+          addressId: response?.pickup?.address_list?.[0]?.address_id ?? 0,
+          pickupTimeId: null,
+          needsTrackingNumber: info.pickup.includes("tracking_number"),
+        };
+      }
+      if (Array.isArray(info.dropoff)) {
+        options.dropoff = {
+          branchId: response?.dropoff?.branch_list?.[0]?.branch_id ?? null,
+          senderRealName: null,
+          needsTrackingNumber: info.dropoff.includes("tracking_number"),
+        };
+      }
+      if (Array.isArray(info.non_integrated)) {
+        options.nonIntegrated = { needsTrackingNumber: true };
+      }
+      if (!options.pickup && !options.dropoff && !options.nonIntegrated) {
+        throw new ShopeeGatewayError(
+          "logistics.error_method",
+          `order ${orderSn} has no shipping method that can be arranged`,
+          false,
+        );
+      }
+      return options;
+    } catch (error) {
+      throw wrapShopeeError(error);
+    }
+  }
+
+  async shipOrder(access: StoreAccess, orderSn: string, options: { trackingNumber?: string | null } = {}) {
+    try {
+      const shipping = await this.getShippingOptions(access, orderSn);
+      const trackingNumber = options.trackingNumber ?? "";
+      // Shopee asks for the field that get_shipping_parameter named, even when the
+      // value is empty, so every present block is sent with its own fields.
+      const body: Record<string, unknown> = { order_sn: orderSn };
+      if (shipping.pickup) {
+        body.pickup = {
+          address_id: shipping.pickup.addressId,
+          pickup_time_id: shipping.pickup.pickupTimeId ?? "",
+          tracking_number: shipping.pickup.needsTrackingNumber ? trackingNumber : "",
+        };
+      }
+      if (shipping.dropoff) {
+        body.dropoff = {
+          branch_id: shipping.dropoff.branchId ?? 0,
+          sender_real_name: shipping.dropoff.senderRealName ?? "",
+          tracking_number: shipping.dropoff.needsTrackingNumber ? trackingNumber : "",
+        };
+      }
+      if (shipping.nonIntegrated) {
+        body.non_integrated = { tracking_number: trackingNumber };
+      }
+
       const response = await this.client.shopPost<{ order_sn?: string; package_number?: string }>(
         "/api/v2/logistics/ship_order",
         { accessToken: access.accessToken, shopId: access.shopId },
-        { order_sn: orderSn },
+        body,
       );
       return { shipped: true, packageNumber: response?.package_number ?? null };
     } catch (error) {
@@ -336,6 +414,17 @@ export class ShopeeGatewayError extends Error {
   }
 }
 
+/**
+ * Normalised `logistics/get_shipping_parameter`. Exactly one of the three is
+ * normally present; a non-integrated channel is the seller's own courier, which
+ * is what a digital shop uses, and it needs a tracking number the seller assigns.
+ */
+export interface ShippingOptions {
+  pickup?: { addressId: number; pickupTimeId: string | null; needsTrackingNumber: boolean };
+  dropoff?: { branchId: number | null; senderRealName: string | null; needsTrackingNumber: boolean };
+  nonIntegrated?: { needsTrackingNumber: boolean };
+}
+
 export function wrapShopeeError(error: unknown): Error {
   if (error instanceof ShopeeApiError) {
     // 4xx-style API errors (invalid signature, expired token) are not retryable;
@@ -360,6 +449,13 @@ export interface FixtureStore {
 export interface FixtureOrder {
   order_sn: string;
   order_status: string;
+  /**
+   * How the shop ships this order. A digital shop uses its own courier
+   * ("jasa kirim toko"), which Shopee calls a non-integrated channel and which
+   * needs a tracking number the seller assigns.
+   */
+  logistics?: "non_integrated" | "integrated";
+  tracking_number?: string | null;
   buyer_username?: string;
   recipient_phone?: string;
   create_time?: number;
@@ -448,7 +544,19 @@ export class FixtureShopeeGateway implements ShopeeGateway {
    * which is why a fixture order can revert on the next reconciliation. Live mode
    * has no such problem: Shopee is the source of truth and it keeps the shipment.
    */
-  async shipOrder(access: StoreAccess, orderSn: string) {
+  async getShippingOptions(access: StoreAccess, orderSn: string): Promise<ShippingOptions> {
+    this.maybeFail("getShippingOptions");
+    const store = this.store(access.shopId);
+    const order = (store.orders ?? []).find((entry) => entry.order_sn === orderSn);
+    if (!order) throw new ShopeeGatewayError("error_order_not_exist", `order ${orderSn} not found`, false);
+
+    if ((order.logistics ?? "non_integrated") === "integrated") {
+      return { pickup: { addressId: 9001, pickupTimeId: null, needsTrackingNumber: false } };
+    }
+    return { nonIntegrated: { needsTrackingNumber: true } };
+  }
+
+  async shipOrder(access: StoreAccess, orderSn: string, options: { trackingNumber?: string | null } = {}) {
     this.maybeFail("shipOrder");
     const store = this.store(access.shopId);
     const order = (store.orders ?? []).find((entry) => entry.order_sn === orderSn);
@@ -456,7 +564,16 @@ export class FixtureShopeeGateway implements ShopeeGateway {
     if (!["READY_TO_SHIP", "PROCESSED"].includes(order.order_status.toUpperCase())) {
       throw new ShopeeGatewayError("error_order_status", `order ${orderSn} is ${order.order_status}`, false);
     }
+    const trackingNumber = options.trackingNumber?.trim() ?? "";
+    if ((order.logistics ?? "non_integrated") === "non_integrated" && trackingNumber === "") {
+      throw new ShopeeGatewayError(
+        "logistics.error_param",
+        "non-integrated channel requires a tracking number",
+        false,
+      );
+    }
     order.order_status = "SHIPPED";
+    order.tracking_number = trackingNumber || null;
     order.update_time = Math.floor(Date.now() / 1000);
     return { shipped: true, packageNumber: `FIXTURE-${orderSn}` };
   }

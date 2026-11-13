@@ -63,14 +63,36 @@ describe("marking an order shipped from the console", () => {
       method: "POST",
       url: `/api/admin/orders/${order.id}/ship`,
       headers: { cookie: session.cookie, "x-csrf-token": session.csrf },
+      payload: { trackingNumber: "DIGITAL-260101PXL0001" },
     });
 
     expect(shipped.statusCode).toBe(200);
-    expect(shipped.json()).toMatchObject({ ok: true, shopeeStatus: "SHIPPED", alreadyShipped: false });
+    expect(shipped.json()).toMatchObject({
+      ok: true,
+      shopeeStatus: "SHIPPED",
+      trackingNumber: "DIGITAL-260101PXL0001",
+      alreadyShipped: false,
+    });
 
     const [after] = await h.db.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
     expect(after!.shopeeStatus).toBe("SHIPPED");
     expect((await admin("GET", "/api/admin/monitoring")).json().shipping.awaitingShipment).toBe(0);
+  });
+
+  it("answers 422 when a jasa kirim toko order is shipped without a resi", async () => {
+    const order = await seedOrder("CLAIMED", "READY_TO_SHIP", "260101PXL0001");
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: `/api/admin/orders/${order.id}/ship`,
+      headers: { cookie: session.cookie, "x-csrf-token": session.csrf },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe("TRACKING_NUMBER_REQUIRED");
+
+    const [unchanged] = await h.db.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
+    expect(unchanged!.shopeeStatus).toBe("READY_TO_SHIP");
   });
 
   it("refuses a second shipment with a clear answer instead of an error", async () => {

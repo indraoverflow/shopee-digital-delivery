@@ -165,9 +165,15 @@ do it for you:
 - Monitoring raises `AWAITING_SHIPMENT` with the count and the age of the oldest order, and lists the
   order numbers, so this is not discovered after the cancellation.
 - The order page has **Tandai dikirim**, which calls Shopee's logistics `ship_order` for that one order
-  (`POST /api/admin/orders/:id/ship`, permission `order:write`). It is idempotent, it refuses an order
-  that was not delivered yet, and when Shopee answers `error_logistics_not_supported` the operator is
-  told to ship it in the seller centre instead of being shown a generic failure.
+  (`POST /api/admin/orders/:id/ship`, permission `order:write`). It is idempotent and it refuses an order
+  that was not delivered yet.
+- Digital shops ship with **jasa kirim toko**, which Shopee treats as a non-integrated channel. That
+  channel needs a **nomor resi**: the platform asks for it (pre-filled `DIGITAL-<order_sn>`, editable)
+  and refuses with `TRACKING_NUMBER_REQUIRED` (422) when it is missing, because sending the order
+  without one only earns a parameter error from Shopee.
+- The platform reads `logistics/get_shipping_parameter` first, so it sends `pickup`, `dropoff` or
+  `non_integrated` according to what that channel actually asks for, and never guesses. A channel that
+  cannot be arranged through the API is reported as such instead of a generic failure.
 - A shop on a channel that requires no shipping at all needs none of this.
 - It is never a side effect of claiming: moving an order in Shopee on the buyer's behalf is an operator
   decision, recorded in the audit log and as a `SHIP_CONFIRMED` order event.

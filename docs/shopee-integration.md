@@ -113,9 +113,13 @@ recorded and ignored, visible in Monitoring.
 
 ## What this platform does not call
 
-Order handling is read-only toward Shopee. The only writes are OAuth token exchange and refresh; there
-is no `ship_order`, no cancellation, no price or stock update. A digital order therefore stays in
-`READY_TO_SHIP` on Shopee until the seller ships it there, even after the buyer has collected the
+Order handling is read-only toward Shopee except for one operator action: **Tandai dikirim**, which
+calls `logistics/ship_order` for a single order after consulting `logistics/get_shipping_parameter`.
+There is no cancellation, no price or stock update, and nothing ships as a side effect of a claim.
+Digital shops use jasa kirim toko, which Shopee models as a non-integrated channel, and that channel
+requires a tracking number (`non_integrated.tracking_number`) the seller would otherwise type in the
+seller centre. A digital order therefore stays in `READY_TO_SHIP` on Shopee until someone ships it,
+either through that console action or in the seller centre, even after the buyer has collected the
 product through the portal. Monitoring surfaces those orders (`AWAITING_SHIPMENT`) because Shopee
 cancels an unshipped order, and that would refund a product that was already delivered.
 

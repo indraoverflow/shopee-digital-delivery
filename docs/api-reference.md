@@ -221,6 +221,18 @@ delivered yet (`ORDER_NOT_READY`, 409), and maps a channel that cannot be arrang
 | POST   | `/api/admin/fulfillments/:id/reissue`     | `claim:write` | `{ reason, extendDays? }`; back to `CLAIMABLE`                                                 |
 | GET    | `/api/admin/fulfillments/:id/minted-link` | `claim:read`  | Decrypted buyer link, `meterai.reveal` audit; 404 `METERAI_LINK_MISSING`, 422 if not e-Meterai |
 | GET    | `/api/admin/claim-attempts`               | `claim:read`  | Verification attempts, `success` filter                                                        |
+| POST   | `/api/claim/fulfillments/:id/drive`       | claim session | `{ email, emailConfirm }`; shares the Drive file with that account, audited as `drive.grant`   |
+
+## Google Drive
+
+| Method | Path                                    | Permission    | Notes                                                                     |
+| ------ | --------------------------------------- | ------------- | ------------------------------------------------------------------------- |
+| GET    | `/api/admin/stores/:id/drive`           | `store:read`  | Connection state, account email, last error. Never the token              |
+| GET    | `/api/admin/stores/:id/drive/connect`   | `store:write` | Consent URL; the store travels in a signed state                          |
+| GET    | `/api/admin/drive/callback`             | none          | Google's redirect; signs nothing, reconnects, then bounces to the console |
+| DELETE | `/api/admin/stores/:id/drive`           | `store:write` | Revokes the token at Google and forgets it                                |
+| GET    | `/api/admin/drive-grants?status=FAILED` | `claim:read`  | Shares Google refused, with the reason                                    |
+| POST   | `/api/admin/drive-grants/:id/retry`     | `claim:write` | Try one buyer again, audited as `drive.retry`                             |
 
 ## Operations
 

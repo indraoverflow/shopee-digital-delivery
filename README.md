@@ -241,6 +241,7 @@ key. Threat model and residual gaps in [`docs/security.md`](docs/security.md).
 - [`docs/database-schema.md`](docs/database-schema.md) — tables, constraints, retention
 - [`docs/shopee-integration.md`](docs/shopee-integration.md) — repository audit, protocol, going live
 - [`docs/order-fulfillment.md`](docs/order-fulfillment.md) — state machine and pipeline
+- [`docs/drive-delivery.md`](docs/drive-delivery.md) — delivering through Google Drive, and its limits
 - [`docs/security.md`](docs/security.md) — controls and known gaps
 - [`docs/api-reference.md`](docs/api-reference.md) — every endpoint
 - [`docs/deployment.md`](docs/deployment.md) — compose, domains, backups, upgrades

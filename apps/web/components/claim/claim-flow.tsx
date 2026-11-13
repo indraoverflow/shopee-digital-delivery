@@ -9,6 +9,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  HardDrive,
   KeyRound,
   LifeBuoy,
   Loader2,
@@ -52,7 +53,8 @@ interface SessionView {
     productName: string;
     productDescription: string | null;
     instructions: string | null;
-    deliveryKind: "FILE" | "LINK" | "CODE" | "CREDENTIALS" | "INSTRUCTIONS";
+    deliveryKind:
+      "DRIVE" | "FILE" | "LINK" | "CODE" | "CREDENTIALS" | "INSTRUCTIONS";
     quantity: number;
     status: string;
     claimDeadline: string | null;
@@ -81,6 +83,7 @@ type Delivery =
   | { kind: "INSTRUCTIONS"; instructions: string | null };
 
 const kindIcon = {
+  DRIVE: HardDrive,
   FILE: Download,
   LINK: ExternalLink,
   CODE: KeyRound,
@@ -534,6 +537,11 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                             ? "Produk sedang disiapkan penjual. Coba lagi beberapa saat lagi."
                             : "Akses produk ini sudah tidak aktif. Hubungi dukungan bila menurut Anda ini keliru."}
                         </p>
+                      ) : item.deliveryKind === "DRIVE" ? (
+                        <DriveClaim
+                          fulfillmentId={item.fulfillmentId}
+                          instructions={item.instructions}
+                        />
                       ) : delivery ? (
                         <DeliveryView delivery={delivery} onCopy={copy} />
                       ) : (
@@ -588,6 +596,131 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
         {brandName} · Portal klaim resmi · Tidak pernah meminta kata sandi
         Shopee
       </p>
+    </div>
+  );
+}
+
+/**
+ * A Drive product is delivered by sharing the file with the buyer's Google account, so
+ * this asks for the address twice before anything is shared. After a successful share the
+ * buyer can see which address got it, and fix a typo while the window is still open.
+ */
+function DriveClaim({
+  fulfillmentId,
+  instructions,
+}: {
+  fulfillmentId: string;
+  instructions: string | null;
+}) {
+  const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{
+    maskedEmail: string;
+    fixUntil: string | null;
+  } | null>(null);
+  const [fixing, setFixing] = useState(false);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.post<{
+        maskedEmail: string;
+        fixUntil: string | null;
+      }>(`/claim/fulfillments/${fulfillmentId}/drive`, {
+        email,
+        emailConfirm: confirm,
+      });
+      setDone({ maskedEmail: result.maskedEmail, fixUntil: result.fixUntil });
+      setFixing(false);
+      setEmail("");
+      setConfirm("");
+      toast({
+        title: "File dibagikan",
+        description: `Dikirim ke ${result.maskedEmail}`,
+      });
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Gagal membagikan file. Coba lagi.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (done && !fixing) {
+    return (
+      <div className="space-y-2">
+        <div className="rounded-lg bg-emerald-50 px-3 py-2.5 ring-1 ring-inset ring-emerald-200">
+          <p className="text-[12.5px] font-medium text-emerald-900">
+            File dibagikan ke {done.maskedEmail}
+          </p>
+          <p className="mt-0.5 text-[11.5px] leading-relaxed text-emerald-800">
+            Buka Google Drive akun itu, lalu lihat menu "Dibagikan kepada saya".
+            Email dari Google juga dikirim ke alamat tersebut.
+          </p>
+        </div>
+        {done.fixUntil ? (
+          <button
+            onClick={() => setFixing(true)}
+            className="text-[12px] text-ink-500 underline underline-offset-2 hover:text-ink-800"
+          >
+            Alamatnya salah, saya mau perbaiki
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[12.5px] leading-relaxed text-ink-600">
+        Masukkan alamat Gmail yang ingin dipakai menerima file ini. Tulis dua
+        kali supaya tidak salah kirim.
+      </p>
+      <input
+        type="email"
+        inputMode="email"
+        autoComplete="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        placeholder="nama@gmail.com"
+        className="h-11 w-full rounded-lg bg-surface px-3 text-[14px] text-ink-950 ring-1 ring-inset ring-line focus:outline-none focus:ring-2 focus:ring-brand-300"
+      />
+      <input
+        type="email"
+        inputMode="email"
+        autoComplete="off"
+        value={confirm}
+        onChange={(event) => setConfirm(event.target.value)}
+        placeholder="ulangi nama@gmail.com"
+        className="h-11 w-full rounded-lg bg-surface px-3 text-[14px] text-ink-950 ring-1 ring-inset ring-line focus:outline-none focus:ring-2 focus:ring-brand-300"
+      />
+      {error ? <p className="text-[12px] text-rose-700">{error}</p> : null}
+      <button
+        onClick={() => void submit()}
+        disabled={
+          busy || !email || email.toLowerCase() !== confirm.toLowerCase()
+        }
+        className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-700 text-[14px] font-medium text-white transition-colors hover:bg-brand-800 disabled:opacity-60"
+      >
+        {busy ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <HardDrive className="h-4 w-4" />
+        )}
+        Bagikan ke akun Google saya
+      </button>
+      {instructions ? (
+        <p className="text-[11.5px] leading-relaxed text-ink-400">
+          {instructions}
+        </p>
+      ) : null}
     </div>
   );
 }

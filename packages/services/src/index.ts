@@ -2,6 +2,7 @@ export * from "./assets.js";
 export * from "./audit.js";
 export * from "./claim-requests.js";
 export * from "./claims.js";
+export * from "./drive.js";
 export * from "./login.js";
 export * from "./notify.js";
 export * from "./orders.js";

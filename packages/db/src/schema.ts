@@ -79,6 +79,11 @@ export const claimStatusEnum = pgEnum("claim_status", [
   "BLOCKED",
 ]);
 export const deliveryKindEnum = pgEnum("delivery_kind", [
+  /**
+   * DRIVE is a Google Drive file shared to a buyer's Google account one order at a
+   * time: there is no link to hand out, so the claim collects an address instead.
+   */
+  "DRIVE",
   "FILE",
   "LINK",
   "CODE",
@@ -868,6 +873,71 @@ export type Claim = typeof claims.$inferSelect;
 export type ClaimRequest = typeof claimRequests.$inferSelect;
 export type LoginChallenge = typeof loginChallenges.$inferSelect;
 export type ClaimSession = typeof claimSessions.$inferSelect;
+/**
+ * A store's Google Drive connection. Consumer @gmail.com accounts have no domain-wide
+ * delegation and no shared drives, so the only way to share a file on the owner's behalf
+ * is an OAuth refresh token they consented to once. It is encrypted at rest, and it is
+ * worth remembering that it grants the whole account: the token never leaves the server.
+ */
+export const driveCredentials = pgTable(
+  "drive_credentials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    storeId: uuid("store_id")
+      .notNull()
+      .references(() => shopeeStores.id, { onDelete: "cascade" }),
+    /** The Google account that owns the file, shown so an operator knows which one. */
+    accountEmail: text("account_email").notNull(),
+    refreshTokenEnc: text("refresh_token_enc").notNull(),
+    scope: text("scope"),
+    status: text("status").notNull().default("CONNECTED"),
+    lastError: text("last_error"),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [uniqueIndex("drive_credentials_store_key").on(table.storeId)],
+);
+
+/**
+ * One row per address the platform handed a Drive file to. The row is the record of who
+ * has access and the handle needed to take it back, which is why the permission id is
+ * stored and why a correction keeps the old address in `corrected_from`.
+ */
+export const driveGrants = pgTable(
+  "drive_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    storeId: uuid("store_id")
+      .notNull()
+      .references(() => shopeeStores.id, { onDelete: "cascade" }),
+    fulfillmentId: uuid("fulfillment_id")
+      .notNull()
+      .references(() => fulfillments.id, { onDelete: "cascade" }),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    /** Lowercased Google address the file was shared with. */
+    email: text("email").notNull(),
+    fileId: text("file_id").notNull(),
+    permissionId: text("permission_id"),
+    /** PENDING while Google is answering, GRANTED once the share exists. */
+    status: text("status").notNull().default("PENDING"),
+    correctedFrom: text("corrected_from"),
+    lastError: text("last_error"),
+    grantedAt: timestamp("granted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("drive_grants_fulfillment_idx").on(table.fulfillmentId),
+    index("drive_grants_status_idx").on(table.status),
+  ],
+);
+
+export type DriveCredential = typeof driveCredentials.$inferSelect;
+export type DriveGrant = typeof driveGrants.$inferSelect;
 export type DeliveryLog = typeof deliveryLogs.$inferSelect;
 export type SyncJob = typeof syncJobs.$inferSelect;
 export type WebhookEvent = typeof webhookEvents.$inferSelect;

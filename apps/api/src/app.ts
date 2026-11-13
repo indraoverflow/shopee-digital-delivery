@@ -33,6 +33,7 @@ import { settingsRoutes } from "./routes/settings.js";
 import { claimRequestRoutes } from "./routes/claim-requests.js";
 import { securityRoutes } from "./routes/security.js";
 import { userRoutes } from "./routes/users.js";
+import { driveRoutes } from "./routes/drive.js";
 import { storeRoutes } from "./routes/stores.js";
 import { webhookRoutes } from "./routes/webhook.js";
 
@@ -293,6 +294,7 @@ export async function buildApp(
   await app.register(webhookRoutes);
   await app.register(authRoutes);
   await app.register(storeRoutes);
+  await app.register(driveRoutes);
   await app.register(catalogRoutes);
   await app.register(digitalProductRoutes);
   await app.register(orderRoutes);

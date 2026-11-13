@@ -4,7 +4,14 @@ import { schema } from "@qansa/db";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { CLAIM_COOKIE } from "../auth.js";
-import { accessDelivery, getClaimSessionView, loadClaimSession, resolveDownload, verifyClaim } from "@qansa/services";
+import {
+  accessDelivery,
+  getClaimSessionView,
+  grantDriveAccess,
+  loadClaimSession,
+  resolveDownload,
+  verifyClaim,
+} from "@qansa/services";
 
 /**
  * The public surface: the claim portal, the signed download endpoint and the
@@ -54,40 +61,92 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         sameSite: "lax",
         secure: ctx.config.sessionCookieSecure,
         path: "/",
-        maxAge: Math.max(60, Math.floor((verified.expiresAt.getTime() - Date.now()) / 1000)),
+        maxAge: Math.max(
+          60,
+          Math.floor((verified.expiresAt.getTime() - Date.now()) / 1000),
+        ),
       });
 
-      return { orderSn: verified.orderSn, expiresAt: verified.expiresAt.toISOString() };
+      return {
+        orderSn: verified.orderSn,
+        expiresAt: verified.expiresAt.toISOString(),
+      };
     },
   );
 
   app.get("/api/claim/session", async (request) => {
     const token = request.cookies[CLAIM_COOKIE];
-    if (!token) throw AppError.unauthorized("Belum ada sesi klaim. Masukkan nomor pesanan Anda.");
+    if (!token)
+      throw AppError.unauthorized(
+        "Belum ada sesi klaim. Masukkan nomor pesanan Anda.",
+      );
     const view = await getClaimSessionView(ctx.deps, token);
-    if (!view) throw AppError.unauthorized("Sesi klaim sudah berakhir. Verifikasi ulang pesanan Anda.");
+    if (!view)
+      throw AppError.unauthorized(
+        "Sesi klaim sudah berakhir. Verifikasi ulang pesanan Anda.",
+      );
     return view;
   });
 
-  app.post<{ Params: { id: string } }>("/api/claim/fulfillments/:id/access", async (request) => {
-    const token = request.cookies[CLAIM_COOKIE];
-    if (!token) throw AppError.unauthorized("Sesi klaim sudah berakhir. Verifikasi ulang pesanan Anda.");
+  app.post<{ Params: { id: string } }>(
+    "/api/claim/fulfillments/:id/access",
+    async (request) => {
+      const token = request.cookies[CLAIM_COOKIE];
+      if (!token)
+        throw AppError.unauthorized(
+          "Sesi klaim sudah berakhir. Verifikasi ulang pesanan Anda.",
+        );
 
-    const payload = await accessDelivery(ctx.deps, {
-      token,
-      fulfillmentId: request.params.id,
-      ip: request.ip,
-      userAgent: request.headers["user-agent"],
-    });
-    return { delivery: payload };
-  });
+      const payload = await accessDelivery(ctx.deps, {
+        token,
+        fulfillmentId: request.params.id,
+        ip: request.ip,
+        userAgent: request.headers["user-agent"],
+      });
+      return { delivery: payload };
+    },
+  );
+
+  /**
+   * Drive products are delivered by sharing the file with the buyer's Google account.
+   * The address is typed twice on purpose: Shopee never sends it, and a typo would hand a
+   * paid product to a stranger.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/api/claim/fulfillments/:id/drive",
+    async (request) => {
+      const token = request.cookies[CLAIM_COOKIE];
+      if (!token)
+        throw AppError.unauthorized(
+          "Sesi klaim sudah berakhir. Verifikasi ulang pesanan Anda.",
+        );
+
+      const body = z
+        .object({
+          email: z.string().trim().max(200),
+          emailConfirm: z.string().trim().max(200),
+        })
+        .parse(request.body);
+
+      const result = await grantDriveAccess(ctx.deps, {
+        token,
+        fulfillmentId: request.params.id,
+        email: body.email,
+        emailConfirm: body.emailConfirm,
+        ip: request.ip,
+      });
+      return { ok: true, ...result };
+    },
+  );
 
   app.post("/api/claim/logout", async (request, reply) => {
     const token = request.cookies[CLAIM_COOKIE];
     if (token) {
       const session = await loadClaimSession(ctx.deps, token);
       if (session) {
-        await ctx.db.delete(schema.claimSessions).where(eq(schema.claimSessions.id, session.session.id));
+        await ctx.db
+          .delete(schema.claimSessions)
+          .where(eq(schema.claimSessions.id, session.session.id));
       }
     }
     reply.clearCookie(CLAIM_COOKIE, { path: "/" });
@@ -103,27 +162,44 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     "/api/claim/download/:token",
     { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (request, reply) => {
-      const resolved = await resolveDownload(ctx.deps, request.params.token, request.ip);
+      const resolved = await resolveDownload(
+        ctx.deps,
+        request.params.token,
+        request.ip,
+      );
       const { stream, sizeBytes } = await ctx.assets.read(resolved.storageKey);
 
       reply
         .header("content-type", resolved.mimeType)
         .header("content-length", String(sizeBytes))
-        .header("content-disposition", `attachment; filename="${resolved.fileName.replace(/"/g, "")}"`)
+        .header(
+          "content-disposition",
+          `attachment; filename="${resolved.fileName.replace(/"/g, "")}"`,
+        )
         .header("cache-control", "private, no-store")
         .header("x-content-type-options", "nosniff");
       return reply.send(stream);
     },
   );
 
-  app.get("/health", async () => ({ ok: true, gatewayMode: ctx.config.gatewayMode, environment: ctx.config.nodeEnv }));
+  app.get("/health", async () => ({
+    ok: true,
+    gatewayMode: ctx.config.gatewayMode,
+    environment: ctx.config.nodeEnv,
+  }));
 
   app.get("/ready", async (_request, reply) => {
     try {
       await ctx.db.execute(ctx.sql`select 1`);
       return { ok: true };
     } catch (error) {
-      return reply.code(503).send({ ok: false, error: error instanceof Error ? error.message : "database unreachable" });
+      return reply
+        .code(503)
+        .send({
+          ok: false,
+          error:
+            error instanceof Error ? error.message : "database unreachable",
+        });
     }
   });
 }

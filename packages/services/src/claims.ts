@@ -327,7 +327,7 @@ export interface ClaimSessionView {
     productName: string;
     productDescription: string | null;
     instructions: string | null;
-    deliveryKind: "FILE" | "LINK" | "CODE" | "CREDENTIALS" | "INSTRUCTIONS";
+    deliveryKind: "DRIVE" | "FILE" | "LINK" | "CODE" | "CREDENTIALS" | "INSTRUCTIONS";
     quantity: number;
     status: string;
     claimDeadline: string | null;

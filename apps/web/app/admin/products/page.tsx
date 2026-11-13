@@ -413,15 +413,31 @@ export default function DigitalProductsPage() {
               />
             </Field>
           </div>
-          {form.deliveryKind === "LINK" ? (
-            <Field label="Tautan produk" htmlFor="url">
+          {form.deliveryKind === "LINK" || form.deliveryKind === "DRIVE" ? (
+            <Field
+              label={
+                form.deliveryKind === "DRIVE"
+                  ? "Tautan file Google Drive"
+                  : "Tautan produk"
+              }
+              hint={
+                form.deliveryKind === "DRIVE"
+                  ? "tempel tautan bagikan file, pembeli menerima akses lewat akun Google"
+                  : undefined
+              }
+              htmlFor="url"
+            >
               <Input
                 id="url"
                 value={form.externalUrl}
                 onChange={(event) =>
                   setForm({ ...form, externalUrl: event.target.value })
                 }
-                placeholder="https://drive.google.com/..."
+                placeholder={
+                  form.deliveryKind === "DRIVE"
+                    ? "https://drive.google.com/file/d/..."
+                    : "https://drive.google.com/..."
+                }
               />
             </Field>
           ) : null}

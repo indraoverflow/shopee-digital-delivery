@@ -19,7 +19,9 @@ const cookies = new Map();
 let failures = 0;
 
 function cookieHeader() {
-  return [...cookies.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
+  return [...cookies.entries()]
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
 }
 
 function absorb(response) {
@@ -27,7 +29,8 @@ function absorb(response) {
   for (const entry of raw) {
     const [pair] = entry.split(";");
     const [name, ...rest] = pair.split("=");
-    if (name && rest.length > 0) cookies.set(name.trim(), rest.join("=").trim());
+    if (name && rest.length > 0)
+      cookies.set(name.trim(), rest.join("=").trim());
   }
 }
 
@@ -57,7 +60,9 @@ function check(label, condition, detail) {
     return;
   }
   failures += 1;
-  console.log(`  FAIL ${label}${detail ? ` — ${typeof detail === "string" ? detail : JSON.stringify(detail).slice(0, 240)}` : ""}`);
+  console.log(
+    `  FAIL ${label}${detail ? ` — ${typeof detail === "string" ? detail : JSON.stringify(detail).slice(0, 240)}` : ""}`,
+  );
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -81,7 +86,10 @@ const main = async () => {
   const health = await call("GET", "/health");
   check("health responds", health.status === 200, health.body);
 
-  const login = await call("POST", "/api/auth/login", { email: EMAIL, password: PASSWORD });
+  const login = await call("POST", "/api/auth/login", {
+    email: EMAIL,
+    password: PASSWORD,
+  });
   check("admin login", login.status === 200, login.body);
   if (login.status !== 200) return;
 
@@ -92,32 +100,51 @@ const main = async () => {
   const shopId = Number(process.env.SMOKE_SHOP_ID ?? 771001);
   let store =
     stores.body.data.find((row) => row.shopId === shopId) ??
-    (await call("POST", "/api/admin/stores", { label: "pixelbloomid", shopId, environment: "SANDBOX", verificationPolicy: "USERNAME" })).body.store;
+    (
+      await call("POST", "/api/admin/stores", {
+        label: "pixelbloomid",
+        shopId,
+        environment: "SANDBOX",
+        verificationPolicy: "USERNAME",
+      })
+    ).body.store;
   check("store exists", Boolean(store?.id), store);
 
   const detail = await call("GET", `/api/admin/stores/${store.id}`);
   if (detail.body.store.status !== "CONNECTED") {
-    const connect = await call("POST", `/api/admin/stores/${store.id}/authorize/simulate`);
+    const connect = await call(
+      "POST",
+      `/api/admin/stores/${store.id}/authorize/simulate`,
+    );
     check("store authorized (fixture)", connect.status === 200, connect.body);
   } else {
     check("store authorized (fixture)", true);
   }
 
-  const productSync = await call("POST", `/api/admin/stores/${store.id}/sync/products`);
+  const productSync = await call(
+    "POST",
+    `/api/admin/stores/${store.id}/sync/products`,
+  );
   check("product sync queued", productSync.status === 200, productSync.body);
 
   const catalog = await waitFor("catalogue synced by the worker", async () => {
-    const result = await call("GET", `/api/admin/catalog?storeId=${store.id}&pageSize=50`);
+    const result = await call(
+      "GET",
+      `/api/admin/catalog?storeId=${store.id}&pageSize=50`,
+    );
     return result.body.data?.length > 0 ? result.body.data : null;
   });
 
   if (!catalog) return;
 
-  const listing = catalog.find((row) => row.variations.length > 0) ?? catalog[0];
+  const listing =
+    catalog.find((row) => row.variations.length > 0) ?? catalog[0];
   check("catalogue has variations", listing.variations.length > 0, listing);
 
   const products = await call("GET", "/api/admin/digital-products?pageSize=50");
-  let digital = products.body.data.find((row) => row.name === "Smoke Test E-Meterai");
+  let digital = products.body.data.find(
+    (row) => row.name === "Smoke Test E-Meterai",
+  );
   if (!digital) {
     const created = await call("POST", "/api/admin/digital-products", {
       name: "Smoke Test E-Meterai",
@@ -130,9 +157,13 @@ const main = async () => {
     digital = created.body.product;
   }
 
-  const codes = await call("POST", `/api/admin/digital-products/${digital.id}/codes`, {
-    codes: ["SMOKE-CODE-1111", "SMOKE-CODE-2222", "SMOKE-CODE-3333"],
-  });
+  const codes = await call(
+    "POST",
+    `/api/admin/digital-products/${digital.id}/codes`,
+    {
+      codes: ["SMOKE-CODE-1111", "SMOKE-CODE-2222", "SMOKE-CODE-3333"],
+    },
+  );
   check("codes stored", codes.status === 200, codes.body);
 
   for (const variation of listing.variations) {
@@ -142,17 +173,29 @@ const main = async () => {
       digitalProductId: digital.id,
       quantityMultiplier: 1,
     });
-    check(`variation mapped: ${variation.name}`, [200, 201].includes(mapped.status), mapped.body);
+    check(
+      `variation mapped: ${variation.name}`,
+      [200, 201].includes(mapped.status),
+      mapped.body,
+    );
   }
 
-  const orderSync = await call("POST", `/api/admin/stores/${store.id}/sync/orders`);
+  const orderSync = await call(
+    "POST",
+    `/api/admin/stores/${store.id}/sync/orders`,
+  );
   check("order sync queued", orderSync.status === 200, orderSync.body);
 
   const orders = await waitFor("orders synced by the worker", async () => {
-    const result = await call("GET", `/api/admin/orders?storeId=${store.id}&pageSize=50`);
+    const result = await call(
+      "GET",
+      `/api/admin/orders?storeId=${store.id}&pageSize=50`,
+    );
     // COMPLETED also qualifies: a repeated smoke run meets an order that was
     // already claimed once, and the same claim must still work.
-    const claimable = result.body.data?.filter((row) => ["FULFILLED", "CLAIMED", "COMPLETED"].includes(row.state));
+    const claimable = result.body.data?.filter((row) =>
+      ["FULFILLED", "CLAIMED", "COMPLETED"].includes(row.state),
+    );
     return claimable?.length ? claimable : null;
   });
 
@@ -165,26 +208,116 @@ const main = async () => {
   const buyer = orderDetail.body.order.buyerUsername;
   check("order detail has buyer", Boolean(buyer), orderDetail.body.order);
 
-  const verify = await call("POST", "/api/claim/verify", { orderSn: order.orderSn, buyerUsername: buyer });
+  const verify = await call("POST", "/api/claim/verify", {
+    orderSn: order.orderSn,
+    buyerUsername: buyer,
+  });
   check("buyer verified", verify.status === 200, verify.body);
 
   const session = await call("GET", "/api/claim/session");
-  check("claim session lists items", session.status === 200 && session.body.items.length > 0, session.body);
+  check(
+    "claim session lists items",
+    session.status === 200 && session.body.items.length > 0,
+    session.body,
+  );
 
   const item = session.body.items?.[0];
-  const delivery = item ? await call("POST", `/api/claim/fulfillments/${item.fulfillmentId}/access`) : { status: 0 };
-  check("product revealed", delivery.status === 200 && Boolean(delivery.body.delivery?.code ?? delivery.body.delivery?.url), delivery.body);
+  const delivery = item
+    ? await call("POST", `/api/claim/fulfillments/${item.fulfillmentId}/access`)
+    : { status: 0 };
+  check(
+    "product revealed",
+    delivery.status === 200 &&
+      Boolean(delivery.body.delivery?.code ?? delivery.body.delivery?.url),
+    delivery.body,
+  );
 
-  const claims = await call("GET", "/api/admin/claims?status=COMPLETED&pageSize=5");
-  check("claim recorded for admin", claims.status === 200 && claims.body.data.length > 0, claims.body);
+  const claims = await call(
+    "GET",
+    "/api/admin/claims?status=COMPLETED&pageSize=5",
+  );
+  check(
+    "claim recorded for admin",
+    claims.status === 200 && claims.body.data.length > 0,
+    claims.body,
+  );
 
   const overview = await call("GET", "/api/admin/overview");
-  check("overview counters", overview.status === 200 && overview.body.orders.total > 0, overview.body?.orders);
+  check(
+    "overview counters",
+    overview.status === 200 && overview.body.orders.total > 0,
+    overview.body?.orders,
+  );
 
   const monitoring = await call("GET", "/api/admin/monitoring");
-  check("monitoring responds", monitoring.status === 200, monitoring.body?.alerts);
+  check(
+    "monitoring responds",
+    monitoring.status === 200,
+    monitoring.body?.alerts,
+  );
 
-  console.log(failures === 0 ? "\nsmoke: PASS" : `\nsmoke: ${failures} check(s) failed`);
+  // --- security surface ---------------------------------------------------
+  const twoFactor = await call("GET", "/api/auth/2fa");
+  check(
+    "2FA status readable",
+    twoFactor.status === 200 && typeof twoFactor.body.enabled === "boolean",
+    twoFactor.body,
+  );
+
+  const chain = await call("GET", "/api/admin/security/audit-chain");
+  check(
+    "audit chain verifies",
+    chain.status === 200 && chain.body.valid === true && chain.body.checked > 0,
+    chain.body,
+  );
+
+  const users = await call("GET", "/api/admin/users");
+  check(
+    "console users listed",
+    users.status === 200 && users.body.data.some((row) => row.email === EMAIL),
+    users.body,
+  );
+
+  const retention = await call("GET", "/api/admin/security/retention");
+  check(
+    "retention preview responds",
+    retention.status === 200 && typeof retention.body.preview?.webhookEvents === "number",
+    retention.body,
+  );
+
+  const notifications = await call("POST", "/api/admin/security/notify-test", {});
+  check(
+    "notification test answers a reason, never a crash",
+    notifications.status === 200 && typeof notifications.body.delivered === "boolean",
+    notifications.body,
+  );
+
+  // --- manual verification queue -----------------------------------------
+  const requests = await call(
+    "GET",
+    "/api/admin/claim-requests?status=PENDING&pageSize=5",
+  );
+  check(
+    "manual verification queue readable",
+    requests.status === 200 && Array.isArray(requests.body.data),
+    requests.body,
+  );
+
+  const unknownRequest = await call("POST", "/api/claim/request", {
+    orderSn: "999999SMOKE0001",
+    buyerUsername: "tidak_ada",
+    contact: "smoke@example.com",
+  });
+  check(
+    "unknown order refused without leaking",
+    unknownRequest.status === 404 &&
+      unknownRequest.body.error?.code === "ORDER_NOT_FOUND",
+    unknownRequest.body,
+  );
+
+  console.log(
+    failures === 0 ? "\nsmoke: PASS" : `\nsmoke: ${failures} check(s) failed`,
+  );
   process.exitCode = failures === 0 ? 0 : 1;
 };
 

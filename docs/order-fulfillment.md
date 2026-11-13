@@ -7,12 +7,12 @@ loop, exactly once, and stays claimable until its window closes.
 
 ## Where the truth lives
 
-| Fact | Source |
-|---|---|
-| Payment and order status | Shopee `order_status` (via Order API) |
-| What was bought | Shopee `order_detail.item_list` (`item_id`, `model_id`, quantity) |
-| What the buyer gets | `product_mappings` → `digital_products` |
-| Whether it was delivered | `fulfillments`, `claims`, `delivery_logs` |
+| Fact                     | Source                                                            |
+| ------------------------ | ----------------------------------------------------------------- |
+| Payment and order status | Shopee `order_status` (via Order API)                             |
+| What was bought          | Shopee `order_detail.item_list` (`item_id`, `model_id`, quantity) |
+| What the buyer gets      | `product_mappings` → `digital_products`                           |
+| Whether it was delivered | `fulfillments`, `claims`, `delivery_logs`                         |
 
 A push is only a signal. Its payload names an order number; the worker fetches the detail and decides.
 
@@ -56,12 +56,12 @@ late push tried to move an order backwards.
 
 `evaluateEligibility` in `packages/core/src/eligibility.ts`:
 
-| Shopee status | Result | Revokes? |
-|---|---|---|
-| `READY_TO_SHIP`, `PROCESSED`, `SHIPPED`, `TO_CONFIRM_RECEIVE`, `COMPLETED` | eligible | no |
-| `UNPAID` | `NOT_PAID` | no |
-| `CANCELLED`, `IN_CANCEL`, `TO_RETURN` | `CANCELLED` | yes |
-| anything else or empty | `NOT_IN_ALLOWED_LIST` / `UNKNOWN_STATUS` | no |
+| Shopee status                                                              | Result                                   | Revokes? |
+| -------------------------------------------------------------------------- | ---------------------------------------- | -------- |
+| `READY_TO_SHIP`, `PROCESSED`, `SHIPPED`, `TO_CONFIRM_RECEIVE`, `COMPLETED` | eligible                                 | no       |
+| `UNPAID`                                                                   | `NOT_PAID`                               | no       |
+| `CANCELLED`, `IN_CANCEL`, `TO_RETURN`                                      | `CANCELLED`                              | yes      |
+| anything else or empty                                                     | `NOT_IN_ALLOWED_LIST` / `UNKNOWN_STATUS` | no       |
 
 The allowed list is stored per store (`shopee_stores.eligible_statuses`) so a seller can require
 `COMPLETED` only.
@@ -128,24 +128,25 @@ states.
 
 ## Claim and delivery
 
-| Step | Implementation | Guarantee |
-|---|---|---|
-| Verify | `verifyClaim` | Username (and phone suffix per policy), rate limited per IP and per order, every attempt logged |
-| Session | `claim_sessions` | 30-minute token, sha256 stored, scoped to one order, httpOnly cookie |
-| Reveal | `accessDelivery` | One transaction: claim row, code taken with `SKIP LOCKED`, delivery log, order state |
-| File | `resolveDownload` | HMAC-signed link, 10-minute TTL, still checked against the claim and a download limit |
-| Revoke | `revokeClaim` | Kills the claim row, so every link already issued stops working |
-| Reissue | `reissueFulfillment` | Fulfilment back to `CLAIMABLE`, old claim kept as history |
+| Step    | Implementation       | Guarantee                                                                                       |
+| ------- | -------------------- | ----------------------------------------------------------------------------------------------- |
+| Verify  | `verifyClaim`        | Username (and phone suffix per policy), rate limited per IP and per order, every attempt logged |
+| Session | `claim_sessions`     | 30-minute token, sha256 stored, scoped to one order, httpOnly cookie                            |
+| Reveal  | `accessDelivery`     | One transaction: claim row, code taken with `SKIP LOCKED`, delivery log, order state            |
+| File    | `resolveDownload`    | HMAC-signed link, 10-minute TTL, still checked against the claim and a download limit           |
+| Revoke  | `revokeClaim`        | Kills the claim row, so every link already issued stops working                                 |
+| Reissue | `reissueFulfillment` | Fulfilment back to `CLAIMABLE`, old claim kept as history                                       |
+| Manual  | `claim_requests`     | Buyer asks, operator approves, username alone is accepted for that order until the window closes |
 
 Delivery kinds:
 
-| Kind | What the buyer sees | Notes |
-|---|---|---|
-| `FILE` | Download button with size and expiry | Streamed from a private volume; no storage path ever leaves the server |
-| `LINK` | "Buka akses produk" | Validated as a URL at input; no store-internal links |
-| `CODE` | The code, copyable | One code per claim, reused on a repeat visit, never shared |
-| `CREDENTIALS` | Username and password rows | Stored as encrypted JSON |
-| `INSTRUCTIONS` | Formatted text | For products delivered elsewhere |
+| Kind           | What the buyer sees                  | Notes                                                                  |
+| -------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| `FILE`         | Download button with size and expiry | Streamed from a private volume; no storage path ever leaves the server |
+| `LINK`         | "Buka akses produk"                  | Validated as a URL at input; no store-internal links                   |
+| `CODE`         | The code, copyable                   | One code per claim, reused on a repeat visit, never shared             |
+| `CREDENTIALS`  | Username and password rows           | Stored as encrypted JSON                                               |
+| `INSTRUCTIONS` | Formatted text                       | For products delivered elsewhere                                       |
 
 Limits: `digital_products.max_deliveries` reveals per claim (default 3), `claim.maxDownloadsPerFulfillment`
 file downloads per claim (default 5). Both are configurable in Settings.
@@ -167,13 +168,16 @@ their own TTL and are checked on every read.
 
 ## Edge cases with answers
 
-| Case | Behaviour |
-|---|---|
-| Buyer pays after an `UNPAID` push | `INELIGIBLE → VALIDATED` on the next sync or push |
-| Same order pushed five times | One order, one item, one fulfilment, five `webhook_events`, one job |
-| Two buyers claiming simultaneously | `FOR UPDATE SKIP LOCKED` hands each a different code |
-| Buyer loses the code | Session is gone but the product can be re-opened by verifying again; the same code returns while the claim lives |
-| Code pool empty | Reveal fails with a support message; admin sees `OUT_OF_STOCK` and the fulfilment stays claimable |
-| Refund after delivery | Cancellation revokes claims, download links die on the next fetch |
-| Listing deleted in Shopee | Product soft deleted, mapping history kept, existing orders unaffected |
-| Mapping removed after delivery | Delivered claim untouched; new orders become `UNMAPPED` |
+| Case                               | Behaviour                                                                                                        |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Buyer pays after an `UNPAID` push  | `INELIGIBLE → VALIDATED` on the next sync or push                                                                |
+| Same order pushed five times       | One order, one item, one fulfilment, five `webhook_events`, one job                                              |
+| Two buyers claiming simultaneously | `FOR UPDATE SKIP LOCKED` hands each a different code                                                             |
+| Buyer loses the code               | Session is gone but the product can be re-opened by verifying again; the same code returns while the claim lives |
+| Code pool empty                    | Reveal fails with a support message; admin sees `OUT_OF_STOCK` and the fulfilment stays claimable                |
+| Refund after delivery              | Cancellation revokes claims, download links die on the next fetch                                                |
+| Listing deleted in Shopee          | Product soft deleted, mapping history kept, existing orders unaffected                                           |
+| Shopee returns no phone at all     | Strict policy fails closed, buyer is offered manual verification instead of a dead end                           |
+| Buyer asks twice for manual review | The pending request is returned (`existing: true`), never duplicated                                             |
+| Operator approves the wrong person | Username still has to match; approval only replaces the phone factor, and it expires                            |
+| Mapping removed after delivery     | Delivered claim untouched; new orders become `UNMAPPED`                                                          |

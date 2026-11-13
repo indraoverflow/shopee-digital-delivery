@@ -41,7 +41,7 @@ and wrapped by `packages/shopee-adapter`:
 Consequence: swapping to another marketplace means implementing one interface, and pointing the
 adapter at a new gateway never touches the pipeline.
 
-Rejected alternative: calling the service's HTTP endpoints. The existing service is a *receiver*
+Rejected alternative: calling the service's HTTP endpoints. The existing service is a _receiver_
 (webhook, token store, one shop call). It does not expose order details or catalogue reads, and
 turning it into a network dependency would add a hop and a failure mode without adding a boundary.
 
@@ -110,6 +110,7 @@ flowchart TB
 
   subgraph "packages/services"
     SVC[claims · orders · sync · queue · settings · audit]
+    SEC[totp · users · claim-requests · retention · rotation]
   end
 
   subgraph "apps/worker"
@@ -117,9 +118,10 @@ flowchart TB
   end
 
   PG[(PostgreSQL)]
-  FS[(uploads volume)]
+  FS[(asset store: local volume or S3)]
   SHAPI[Shopee Open Platform]
   VEN[vendor/shopee-integration]
+  HOOK[notification webhook]
 
   P --> PX --> RW --> AU
   A --> PX
@@ -133,8 +135,22 @@ flowchart TB
   SVC --> PG
   SVC --> FS
   SVC --> VEN
+  SVC -. best effort .-> HOOK
+  SEC --> PG
   VEN --> SHAPI
 ```
+
+## Seams that keep optional parts optional
+
+Four pieces are optional at runtime, and each is a single interface so the default deployment needs
+nothing extra:
+
+| Seam | Default | Alternative | Why it is a seam |
+|---|---|---|---|
+| Asset storage (`AssetStore`) | local volume | any S3-compatible bucket | Moving files must not touch claim or delivery code |
+| Notifications (`notify`) | disabled | one signed webhook | Slack, n8n and the WhatsApp gateway all speak HTTP |
+| Console access | open | `ADMIN_IP_ALLOWLIST` | A homelab deployment may want the fence; a distributed team may not |
+| Second factor | off per account | TOTP per user | Enforced by the account, not by an environment variable |
 
 ## Two flows, end to end
 
@@ -190,18 +206,18 @@ sequenceDiagram
 
 ## Failure modes and what happens
 
-| Failure | Behaviour |
-|---|---|
-| Push never arrives | Scheduled reconciliation by `update_time` picks the order up |
-| Push arrives twice | Body hash unique index → `duplicate`, no second job |
-| Push arrives late (order already claimed) | `planTransition` finds no path backwards; a `STATE_HELD` event records why |
-| Shopee API 5xx / timeout | Job retried with backoff; Monitoring shows the attempt and the error |
-| Token expired mid-flight | `getStoreAccess` refreshes before use and persists the new pair |
-| Refresh token rejected | Store marked `ERROR`, monitoring alert, seller re-authorizes |
-| Worker crashes mid-job | Lock goes stale, `recoverStuckJobs` re-queues it after 15 minutes |
-| Code pool empty | Reveal fails with `OUT_OF_STOCK`, buyer sees a support message, admin sees the alert |
-| Order cancelled after delivery | Fulfilment and claims revoked; existing download links die because the route re-checks the claim |
-| Mapping points at a DRAFT product | Fulfilment stays `PENDING` with `PRODUCT_NOT_ACTIVE`; nothing is served |
+| Failure                                   | Behaviour                                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Push never arrives                        | Scheduled reconciliation by `update_time` picks the order up                                     |
+| Push arrives twice                        | Body hash unique index → `duplicate`, no second job                                              |
+| Push arrives late (order already claimed) | `planTransition` finds no path backwards; a `STATE_HELD` event records why                       |
+| Shopee API 5xx / timeout                  | Job retried with backoff; Monitoring shows the attempt and the error                             |
+| Token expired mid-flight                  | `getStoreAccess` refreshes before use and persists the new pair                                  |
+| Refresh token rejected                    | Store marked `ERROR`, monitoring alert, seller re-authorizes                                     |
+| Worker crashes mid-job                    | Lock goes stale, `recoverStuckJobs` re-queues it after 15 minutes                                |
+| Code pool empty                           | Reveal fails with `OUT_OF_STOCK`, buyer sees a support message, admin sees the alert             |
+| Order cancelled after delivery            | Fulfilment and claims revoked; existing download links die because the route re-checks the claim |
+| Mapping points at a DRAFT product         | Fulfilment stays `PENDING` with `PRODUCT_NOT_ACTIVE`; nothing is served                          |
 
 ## Scaling
 

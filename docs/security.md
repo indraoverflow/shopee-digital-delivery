@@ -5,16 +5,16 @@ and digital products that are the actual merchandise. Both are treated as secret
 
 ## Threat model
 
-| Actor | Capability | What stops them |
-|---|---|---|
-| Someone who saw an order number in a chat or email | Can type a real order number | Second factor (buyer username, optionally phone suffix) + per-IP and per-order limits |
-| A buyer with a valid claim | Can share a download link | Signed link with 10-minute TTL, per-claim download limit, claim can be revoked |
-| A buyer who already collected | Can replay an old link | Download route re-checks claim status and revocation on every request |
-| An attacker who finds the admin host | Can try passwords | Rate limit, scrypt (N=2^15), uniform error message, audit log |
-| A viewer account | Can read data | RBAC: writes require a role that has the permission |
-| A cross-site page | Can make the browser send a request | CSRF header must echo a cookie value; CORS allow list; SameSite=Lax |
-| A malicious upload | Can ship an executable | Extension allow list, size cap, private storage, `Content-Disposition: attachment`, `nosniff` |
-| A spoofed push | Can inject fake orders | HMAC over the exact public URL + raw body, with the partner key |
+| Actor                                              | Capability                          | What stops them                                                                               |
+| -------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------- |
+| Someone who saw an order number in a chat or email | Can type a real order number        | Second factor (buyer username, optionally phone suffix) + per-IP and per-order limits         |
+| A buyer with a valid claim                         | Can share a download link           | Signed link with 10-minute TTL, per-claim download limit, claim can be revoked                |
+| A buyer who already collected                      | Can replay an old link              | Download route re-checks claim status and revocation on every request                         |
+| An attacker who finds the admin host               | Can try passwords                   | Rate limit, scrypt (N=2^15), uniform error message, audit log                                 |
+| A viewer account                                   | Can read data                       | RBAC: writes require a role that has the permission                                           |
+| A cross-site page                                  | Can make the browser send a request | CSRF header must echo a cookie value; CORS allow list; SameSite=Lax                           |
+| A malicious upload                                 | Can ship an executable              | Extension allow list, size cap, private storage, `Content-Disposition: attachment`, `nosniff` |
+| A spoofed push                                     | Can inject fake orders              | HMAC over the exact public URL + raw body, with the partner key                               |
 
 ## Authentication and sessions
 
@@ -32,21 +32,21 @@ and digital products that are the actual merchandise. Both are treated as secret
 
 Four roles, permissions in code:
 
-| Permission | OWNER | ADMIN | OPERATOR | VIEWER |
-|---|---|---|---|---|
-| overview / monitoring read | ✓ | ✓ | ✓ | ✓ |
-| store read | ✓ | ✓ | ✓ | ✓ |
-| store write (connect, disconnect, sync, branding) | ✓ | ✓ | — | — |
-| catalogue read | ✓ | ✓ | ✓ | ✓ |
-| mapping write | ✓ | ✓ | ✓ | — |
-| product read | ✓ | ✓ | ✓ | ✓ |
-| product write (digital products, assets, codes) | ✓ | ✓ | — | — |
-| order read / resync | ✓ | ✓ | ✓ | — |
-| claim read | ✓ | ✓ | ✓ | ✓ |
-| claim revoke / reissue | ✓ | ✓ | ✓ | — |
-| settings write | ✓ | — | — | — |
-| audit read | ✓ | ✓ | — | — |
-| user write | ✓ | — | — | — |
+| Permission                                        | OWNER | ADMIN | OPERATOR | VIEWER |
+| ------------------------------------------------- | ----- | ----- | -------- | ------ |
+| overview / monitoring read                        | ✓     | ✓     | ✓        | ✓      |
+| store read                                        | ✓     | ✓     | ✓        | ✓      |
+| store write (connect, disconnect, sync, branding) | ✓     | ✓     | —        | —      |
+| catalogue read                                    | ✓     | ✓     | ✓        | ✓      |
+| mapping write                                     | ✓     | ✓     | ✓        | —      |
+| product read                                      | ✓     | ✓     | ✓        | ✓      |
+| product write (digital products, assets, codes)   | ✓     | ✓     | —        | —      |
+| order read / resync                               | ✓     | ✓     | ✓        | —      |
+| claim read                                        | ✓     | ✓     | ✓        | ✓      |
+| claim revoke / reissue                            | ✓     | ✓     | ✓        | —      |
+| settings write                                    | ✓     | —     | —        | —      |
+| audit read                                        | ✓     | ✓     | —        | —      |
+| user write                                        | ✓     | —     | —        | —      |
 
 Every admin route declares the permission it needs as a `preHandler`; a missing check fails closed
 because the handler throws when no user is attached.
@@ -60,14 +60,14 @@ exists yet.
 
 ## Secrets at rest
 
-| Secret | Storage |
-|---|---|
-| Shopee access token | `shopee_tokens.access_token_enc` — AES-256-GCM, random IV per write, version tag as AAD |
-| Shopee refresh token | Same column pattern; single use, replaced on every refresh |
-| Activation codes, credentials | `digital_product_codes.secret_enc` — same cipher; the admin list shows a masked label only |
-| Passwords | scrypt, never reversible |
-| Partner key, encryption key, signing secret | Environment only; never in the database, never in the browser |
-| Session token | Only its sha256 |
+| Secret                                      | Storage                                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Shopee access token                         | `shopee_tokens.access_token_enc` — AES-256-GCM, random IV per write, version tag as AAD    |
+| Shopee refresh token                        | Same column pattern; single use, replaced on every refresh                                 |
+| Activation codes, credentials               | `digital_product_codes.secret_enc` — same cipher; the admin list shows a masked label only |
+| Passwords                                   | scrypt, never reversible                                                                   |
+| Partner key, encryption key, signing secret | Environment only; never in the database, never in the browser                              |
+| Session token                               | Only its sha256                                                                            |
 
 `APP_ENCRYPTION_KEY` must be 32 bytes of hex; the API refuses to boot otherwise. Rotating it requires
 re-encrypting the token and code tables (documented in `docs/deployment.md`).
@@ -124,17 +124,78 @@ connect/disconnect/authorize, mapping changes, product changes, code imports, cl
 reissues, settings changes, order resync, logins. `order_events` records every pipeline decision,
 including the ones that did nothing (`STATE_HELD`) and why.
 
+Each entry carries `seq`, `prev_hash` and `entry_hash`. The hash covers the previous entry's hash plus
+a canonical form of the row (sorted metadata keys, ISO timestamp), so editing a row, deleting one, or
+rewriting a sequence number breaks the chain and the next verification reports the first broken
+sequence. Rows written before the chain existed carry no hash; verification reports them as
+`unhashed` and starts at the first hashed row, rather than failing forever or pretending to cover them.
+The console checks it from **Keamanan**, and `GET /api/admin/security/audit-chain` returns the result
+for monitoring.
+
+## Two-factor authentication
+
+TOTP (RFC 6238, SHA-1, 6 digits, 30 seconds) is implemented in `packages/core/src/totp.ts` rather
+than pulled in as a dependency, and verified by the RFC's own test vectors.
+
+- The secret is stored encrypted with `APP_ENCRYPTION_KEY`, so a database dump alone does not yield a
+  working authenticator seed.
+- Enrolment only completes after the user proves the authenticator works by entering a valid code.
+- Ten recovery codes are generated at that moment, shown once, and stored as hashes. Each is consumed
+  on use and cannot be replayed.
+- A login with 2FA enabled returns a challenge instead of a session: a row in `login_challenges` with
+  a hashed token, a five minute TTL, single use, and a five attempt limit. A stolen cookie from that
+  stage is worthless after the real login completes.
+- Disabling 2FA requires the account password, and every step is audited.
+
+## Console hardening
+
+- `ADMIN_IP_ALLOWLIST` accepts addresses and CIDR blocks for IPv4 and IPv6. When set, console calls
+  from anywhere else get 403. The Shopee push endpoint and the public claim routes are exempt,
+  because their callers are Shopee and buyers.
+- `docker/nginx.conf` adds `limit_req` zones for the claim and console hostnames and the standard
+  security headers, for deployments that terminate TLS there instead of at Cloudflare.
+- Per-route rate limits: login 10 per 5 minutes, 2FA challenge 20 per 5 minutes, manual verification
+  request 8 per 10 minutes, global 240 per minute.
+
+## Retention
+
+`RETENTION_SWEEP` runs daily in the worker and is also a console button. It removes expired claim
+sessions, expired console sessions, expired login challenges, webhook bodies older than 90 days and
+succeeded jobs older than 30 days, and it expires manual requests nobody answered. Orders, claims,
+fulfilments, delivery logs and audit rows are never deleted: the financial and support record stays
+complete. Dead-letter jobs are kept, because they are the only evidence of a failure.
+
+## Key rotation
+
+`POST /api/admin/security/rotate-key` re-encrypts Shopee access and refresh tokens, activation codes
+and 2FA secrets from `APP_ENCRYPTION_KEY_OLD` to `APP_ENCRYPTION_KEY` in a single transaction. A dry
+run reports the row counts and rolls everything back, so the procedure can be rehearsed. A failure
+mid-run leaves every row on the old key: the service keeps working instead of half-rotating.
+
+## Object storage
+
+Digital assets can live on local disk or on any S3-compatible bucket (`ASSET_STORE=s3`). The signer is
+implemented directly on the S3 REST API with SigV4, so no SDK ships in the image. Downloads are never
+served from a public bucket URL: the API checks the claim and the signature first and then proxies the
+object, so revoking a claim takes effect immediately.
+
+## Manual verification
+
+The phone factor depends on what Shopee returns, and some orders carry no phone at all. The buyer is
+never left without a path: they can file a manual request, an operator checks the order out of band,
+and approval opens a time-boxed window in which the username alone is accepted for that one order. The
+buyer still has to match the buyer username, the order still has to be paid and claimable, every step
+is audited, and the window is closed by the retention sweep once it passes.
+
 ## Known gaps
 
-| Gap | Impact | Mitigation path |
-|---|---|---|
-| No 2FA on console accounts | A stolen password is enough | Add TOTP; the session table already supports revocation |
-| No WAF in front of the API | Volumetric abuse reaches Fastify | Cloudflare in front, or nginx `limit_req` |
-| Phone factor depends on Shopee's mask | Orders without a phone cannot use the strict policy | Fail closed (implemented); support flow for manual proof |
-| No IP allow list for the console | Anywhere-access | Optional nginx allow list for `admin.` |
-| Codes are revealed once, then stored by the buyer | Cannot be recalled | Standard for licence keys; revocation stops future reveals |
-| Single shared encryption key | One rotation event for everything | Add a key id prefix to `v1.` and decrypt by id |
-| Audit log is append-only by convention | A database owner can edit it | Ship to an append-only store if that threat matters |
+| Gap                                               | Impact                                              | Mitigation path                                            |
+| ------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
+| WAF is deployment-side                            | Volumetric abuse reaches Fastify if exposed directly | Cloudflare in front (recommended), or nginx `limit_req`    |
+| Codes are revealed once, then stored by the buyer | Cannot be recalled                                  | Standard for licence keys; revocation stops future reveals |
+| Single logical encryption key                      | One rotation event for everything                   | Rotation is implemented; key ids would allow a staged run  |
+| Audit chain is tamper-evident, not tamper-proof   | Someone with database write access can rewrite all  | Ship the head hash to an append-only store if needed       |
+| Manual approval depends on operator judgement     | A careless operator can approve the wrong person    | Reviewed by role, time-boxed, fully audited                |
 
 ## Checklist before going live
 

@@ -5,20 +5,21 @@ push notification (or by the reconciliation sweep when a push never comes), the 
 mapped to that exact variation, and the buyer collects it from `claim.qansa.web.id` after proving the
 order is theirs. Nobody copies a link into a chat by hand.
 
-- **Buyer portal** — one form, two verification factors, the product in hand in under a minute.
+- **Buyer portal** — one form, two verification factors, the product in hand in under a minute, and a
+  manual route for the buyer Shopee's masked phone leaves stranded.
 - **Admin console** — stores, catalogue sync, product mapping, digital products, orders, claims,
-  monitoring, audit trail.
-- **Worker** — the queue, retries, dead letters, reconciliation, claim expiry.
+  manual verification queue, monitoring, users, security, audit trail.
+- **Worker** — the queue, retries, dead letters, reconciliation, claim expiry, retention.
 
 ## Status
 
 | Area | State |
 |---|---|
-| Database schema and migrations | 22 tables, applied against PostgreSQL 17 |
-| API | 40 routes, typed end to end (Zod at every boundary) |
-| Buyer portal | Working: verified against a real order, code and file delivery |
-| Admin console | 10 pages, all wired to the API |
-| Automated tests | 120 tests: unit, integration, HTTP journey, worker |
+| Database schema and migrations | 25 tables, applied against PostgreSQL 17 |
+| API | 49 routes, typed end to end (Zod at every boundary) |
+| Buyer portal | Working: verified against a real order, code and file delivery, plus manual verification |
+| Admin console | 13 pages, all wired to the API |
+| Automated tests | 213 tests: unit, integration, HTTP journey, worker |
 | Smoke test | `scripts/smoke.mjs` passes against a live API + worker + PostgreSQL |
 | Shopee connection | `fixture` mode verified; `live` mode needs partner credentials (see below) |
 | Docker | Multi-stage images for API/worker and web, compose stack, nginx |
@@ -202,7 +203,7 @@ Details, including the full state diagram, in [`docs/order-fulfillment.md`](docs
 ## Testing
 
 ```bash
-pnpm test         # 120 tests: core rules, SQL/migrations, pipeline, claims, HTTP journey, worker
+pnpm test         # 213 tests: core rules, SQL/migrations, pipeline, claims, security, HTTP journey, worker
 pnpm typecheck    # every package and app, strict mode
 pnpm -r build     # vendor, API/worker bundles, Next.js production build
 ```
@@ -213,15 +214,24 @@ connects a store, syncs the catalogue, maps a variation, receives a push, claims
 revokes the claim, all through Fastify's injector.
 
 `scripts/smoke.mjs` is the other half: it runs the same path against a *running* stack with a real
-PostgreSQL, which is what CI cannot prove.
+PostgreSQL, which is what CI cannot prove. `scripts/verify-s3.ts` does the same for object storage: it
+writes, reads and deletes an object against any S3-compatible endpoint, so the hand-written SigV4
+signer is checked against a real server and not only against a mock.
+
+```bash
+S3_ENDPOINT=http://127.0.0.1:19000 S3_BUCKET=qansa-assets \
+S3_ACCESS_KEY_ID=qansa S3_SECRET_ACCESS_KEY=qansa-s3-secret \
+npx tsx scripts/verify-s3.ts
+```
 
 ## Security
 
-Short version: scrypt password hashes, opaque session tokens stored as sha256, CSRF header on every
-mutation, RBAC with four roles, AES-256-GCM at rest for tokens and codes, HMAC push verification over
-the raw body, signed expiring download links, per-IP and per-order claim rate limits, upload allow
-list with a path-traversal guard, and an audit trail for every administrative action. Threat model and
-gaps in [`docs/security.md`](docs/security.md).
+Short version: scrypt password hashes, optional TOTP two-factor with single-use recovery codes, opaque
+session tokens stored as sha256, CSRF header on every mutation, RBAC with four roles, AES-256-GCM at
+rest for tokens, codes and 2FA secrets, HMAC push verification over the raw body, signed expiring
+download links, per-IP and per-order claim rate limits, optional console IP allow list, upload allow
+list with a path-traversal guard, hash-chained audit log, and a rotation procedure for the encryption
+key. Threat model and residual gaps in [`docs/security.md`](docs/security.md).
 
 ## Documentation
 
@@ -239,13 +249,16 @@ gaps in [`docs/security.md`](docs/security.md).
 - **Live Shopee round trip is unverified.** No partner credentials here. The adapter, signing and
   OAuth reuse are tested against fixtures only.
 - **Phone-based verification depends on Shopee's mask.** When the order returns no phone, the
-  `USERNAME_PHONE` policy fails closed; the portal then asks the buyer to contact support.
+  `USERNAME_PHONE` policy fails closed and the buyer is routed to manual verification, which needs an
+  operator to check the order out of band.
 - **Digital listings on Shopee still need a shipping method.** Sellers typically use a zero-weight
   courier option; the platform does not change Shopee listing setup.
-- **One asset per file product**, 50 MB each. Larger catalogues should move to object storage; the
-  storage layer is a single class (`LocalAssetStore`) behind the service boundary.
-- **No 2FA** for console accounts yet; sessions expire after 12 hours and a password change revokes
-  every session.
+- **One asset per file product**, 50 MB each. Set `ASSET_STORE=s3` to move assets to object storage;
+  the local driver stays the default.
+- **Notifications are one outbound webhook**, not email. It reaches Slack, n8n or the WhatsApp gateway
+  already running on this host; there is no SMTP client in the image.
+- **WAF is deployment-side.** Cloudflare in front is the recommended shape; `docker/nginx.conf` also
+  ships `limit_req` zones for the case where nginx terminates TLS directly.
 - Shopify, Tokopedia, TikTok Shop: not implemented. The gateway interface is where they would plug in.
 
 ## License

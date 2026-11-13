@@ -28,7 +28,7 @@ export interface ApiHarness {
   close: () => Promise<void>;
 }
 
-export async function apiHarness(): Promise<ApiHarness> {
+export async function apiHarness(envOverrides: Record<string, string | undefined> = {}): Promise<ApiHarness> {
   const db = await createTestDatabase();
   const uploads = await mkdtemp(join(tmpdir(), "qansa-api-uploads-"));
 
@@ -47,6 +47,7 @@ export async function apiHarness(): Promise<ApiHarness> {
     SHOPEE_PUSH_URL: PUSH_URL,
     UPLOAD_DIR: uploads,
     LOG_LEVEL: "silent",
+    ...envOverrides,
   });
 
   const { fixtureStores } = await import("@qansa/shopee-adapter");

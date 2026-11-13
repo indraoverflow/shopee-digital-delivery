@@ -35,21 +35,26 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       const rawBody = (request.rawBody ?? Buffer.from(JSON.stringify(request.body ?? {}))).toString("utf8");
       const bodyHash = sha256Hex(rawBody);
 
-      let signatureValid = false;
-      if (ctx.config.pushUrl) {
-        signatureValid = verifyPushSignature({
-          partnerKey: ctx.config.partnerKey,
-          url: ctx.config.pushUrl,
-          rawBody,
-          signature: String(request.headers.authorization ?? ""),
-          alternateKeys: ctx.config.pushTestPartnerKey ? [ctx.config.pushTestPartnerKey] : [],
-        });
-      } else if (ctx.config.nodeEnv !== "production") {
-        // Local development without a public URL: record that the signature was
-        // not checked instead of silently pretending it passed.
-        ctx.logger.warn({}, "SHOPEE_PUSH_URL is unset; accepting an unverified push outside production");
-        signatureValid = true;
+      /**
+       * A deployment without SHOPEE_PUSH_URL cannot check any signature, so in
+       * production it refuses every push rather than accepting unauthenticated
+       * ones. Outside production the push is accepted and logged as unverified,
+       * which is what makes the fixture demo work.
+       */
+      if (!ctx.config.pushUrl && ctx.config.nodeEnv === "production") {
+        ctx.logger.error({}, "SHOPEE_PUSH_URL is unset in production: refusing every push");
+        return reply.code(503).send({ error: "push endpoint is not configured" });
       }
+
+      const signatureValid = ctx.config.pushUrl
+        ? verifyPushSignature({
+            partnerKey: ctx.config.partnerKey,
+            url: ctx.config.pushUrl,
+            rawBody,
+            signature: String(request.headers.authorization ?? ""),
+            alternateKeys: ctx.config.pushTestPartnerKey ? [ctx.config.pushTestPartnerKey] : [],
+          })
+        : (ctx.logger.warn({}, "SHOPEE_PUSH_URL is unset; accepting an unverified push outside production"), true);
 
       let event: PushPayload;
       try {
@@ -61,6 +66,32 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       const shopId = typeof event.shop_id === "number" ? event.shop_id : undefined;
       const orderSn = event.data?.ordersn ?? event.data?.order_sn;
 
+      /**
+       * Signature before duplicate detection. Checking the body hash first made a
+       * replayed body answer "duplicate" instead of "invalid signature", which
+       * told an attacker their payload had been seen. A rejected push is still
+       * recorded once, for forensics.
+       */
+      if (!signatureValid) {
+        await ctx.db
+          .insert(schema.webhookEvents)
+          .values({
+            // A rejected body gets its own hash namespace: otherwise a forged
+            // attempt would occupy the hash of a body Shopee later sends for
+            // real, and the genuine push would be dropped as a duplicate.
+            bodyHash: sha256Hex(`invalid:${bodyHash}`),
+            code: event.code ?? null,
+            shopId: shopId ?? null,
+            orderSn: orderSn ?? null,
+            signatureValid: false,
+            status: "FAILED",
+            payload: event as unknown as Record<string, unknown>,
+            error: "invalid push signature",
+          })
+          .onConflictDoNothing();
+        return reply.code(401).send({ error: "invalid push signature" });
+      }
+
       // The body hash is the duplicate guard: Shopee retries the same push, and
       // a retry must not create a second order or a second fulfilment.
       const [record] = await ctx.db
@@ -70,10 +101,9 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
           code: event.code ?? null,
           shopId: shopId ?? null,
           orderSn: orderSn ?? null,
-          signatureValid,
-          status: signatureValid ? "RECEIVED" : "FAILED",
+          signatureValid: true,
+          status: "RECEIVED",
           payload: event as unknown as Record<string, unknown>,
-          error: signatureValid ? null : "invalid push signature",
         })
         .onConflictDoNothing()
         .returning({ id: schema.webhookEvents.id });
@@ -81,10 +111,6 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       if (!record) {
         // Already stored: acknowledge so Shopee stops retrying, and say why.
         return reply.code(200).send({ ok: true, duplicate: true });
-      }
-
-      if (!signatureValid) {
-        return reply.code(401).send({ error: "invalid push signature" });
       }
 
       const [store] = shopId

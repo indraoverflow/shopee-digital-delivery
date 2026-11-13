@@ -103,6 +103,13 @@ recorded and ignored, visible in Monitoring.
 - API calls sign `partner_id + path + timestamp` (+ `access_token` + `shop_id` for shop calls). Extra
   query params (paging, filters) never enter the signature.
 - Shopee rejects a signature older than five minutes; a skewed clock looks exactly like a wrong key.
+- Signature is checked **before** the duplicate guard. Verifying the body hash first made a replayed
+  forged body answer `duplicate: true` instead of `401`, which confirmed to the sender that the payload
+  had been seen. A rejected push is recorded once, for forensics, and never queued, under its own
+  hash namespace so a forged attempt cannot occupy the hash of a body Shopee later sends for real.
+- With `SHOPEE_PUSH_URL` unset, a production deployment refuses every push with `503` rather than
+  accepting unauthenticated ones. Outside production the push is accepted and logged as unverified, so
+  the fixture demo keeps working.
 
 ## Going live: the remaining steps
 

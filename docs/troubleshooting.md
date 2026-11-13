@@ -50,43 +50,43 @@ Symptom first, cause second, fix third.
 
 ## Buyer claims
 
-| Symptom                                | Cause                                             | Fix                                                            |
-| -------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------- |
-| “Nomor pesanan tidak ditemukan”        | Order belongs to another store, or has not synced | Check the store filter on the order                            |
-| `USERNAME_MISMATCH`                    | Buyer typed a different username                  | The username on the Shopee order is authoritative              |
+| Symptom                                | Cause                                             | Fix                                                              |
+| -------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| “Nomor pesanan tidak ditemukan”        | Order belongs to another store, or has not synced | Check the store filter on the order                              |
+| `USERNAME_MISMATCH`                    | Buyer typed a different username                  | The username on the Shopee order is authoritative                |
 | `PHONE_UNAVAILABLE`                    | Strict policy but Shopee returned no phone        | Keep the policy; approve a manual request from Verifikasi Manual |
-| `TOO_MANY_ATTEMPTS`                    | More failures than the window allows              | Wait, or raise the limit in Settings                           |
-| “Stok produk digital ini sedang habis” | Code pool empty                                   | Import codes in the digital product page                       |
-| Download says expired                  | Link TTL passed (10 minutes)                      | Re-open the product from the portal                            |
-| “Batas unduhan sudah tercapai”         | Download counter hit the limit                    | Admin can raise `maxDownloadsPerFulfillment` or reissue        |
-| Everything 401 immediately             | `SESSION_COOKIE_SECURE=true` on plain HTTP        | Set it to `false` locally, or serve HTTPS                      |
+| `TOO_MANY_ATTEMPTS`                    | More failures than the window allows              | Wait, or raise the limit in Settings                             |
+| “Stok produk digital ini sedang habis” | Code pool empty                                   | Import codes in the digital product page                         |
+| Download says expired                  | Link TTL passed (10 minutes)                      | Re-open the product from the portal                              |
+| “Batas unduhan sudah tercapai”         | Download counter hit the limit                    | Admin can raise `maxDownloadsPerFulfillment` or reissue          |
+| Everything 401 immediately             | `SESSION_COOKIE_SECURE=true` on plain HTTP        | Set it to `false` locally, or serve HTTPS                        |
 
 ## Console and API
 
-| Symptom                     | Cause                                                      | Fix                                                                                            |
-| --------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `CSRF_FAILED`               | CSRF cookie missing (cookie cleared, or a direct API call) | Reload the console; API clients must send `x-csrf-token`                                       |
-| `Origin tidak diizinkan`    | Origin not in the allow list (proxy host, custom port)     | Add it to `CLAIM_ORIGIN`/`ADMIN_ORIGIN`/`EXTRA_ORIGINS`, or use a loopback port in development |
-| 403 on a page action        | Role lacks the permission                                  | Check `/api/auth/me` → `permissions`                                                           |
-| Charts empty, counters zero | Nothing synced yet                                         | Connect a store and sync                                                                       |
-| `next build` fails on types | Local changes broke a contract                             | `pnpm typecheck` for the exact file                                                            |
-| `IP_NOT_ALLOWED` on every call | `ADMIN_IP_ALLOWLIST` does not include your address     | Fix `.env` and restart the API; `/health` always answers                                       |
-| Locked out with 2FA lost    | Authenticator gone and no recovery codes                   | An owner resets the password (`POST /api/admin/users/:id/password`), then re-enrol              |
-| `CHALLENGE_EXPIRED`         | The 2FA step waited more than five minutes                 | Log in again; the challenge is single use                                                      |
-| `OLD_KEY_MISSING`           | Rotation attempted without `APP_ENCRYPTION_KEY_OLD`        | Set it to the key currently in use, restart, then rotate                                       |
-| `ASSET_UPLOAD_FAILED` (502) | Bucket credentials or endpoint wrong, or path style needed | Check `S3_*`, set `S3_FORCE_PATH_STYLE=true` for MinIO                                         |
-| Notification never arrives  | Not enabled, URL empty, event not selected                 | Keamanan sends a test and reports why: `disabled`, `no_url`, `filtered`, `http_error`          |
+| Symptom                        | Cause                                                      | Fix                                                                                            |
+| ------------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `CSRF_FAILED`                  | CSRF cookie missing (cookie cleared, or a direct API call) | Reload the console; API clients must send `x-csrf-token`                                       |
+| `Origin tidak diizinkan`       | Origin not in the allow list (proxy host, custom port)     | Add it to `CLAIM_ORIGIN`/`ADMIN_ORIGIN`/`EXTRA_ORIGINS`, or use a loopback port in development |
+| 403 on a page action           | Role lacks the permission                                  | Check `/api/auth/me` → `permissions`                                                           |
+| Charts empty, counters zero    | Nothing synced yet                                         | Connect a store and sync                                                                       |
+| `next build` fails on types    | Local changes broke a contract                             | `pnpm typecheck` for the exact file                                                            |
+| `IP_NOT_ALLOWED` on every call | `ADMIN_IP_ALLOWLIST` does not include your address         | Fix `.env` and restart the API; `/health` always answers                                       |
+| Locked out with 2FA lost       | Authenticator gone and no recovery codes                   | An owner resets the password (`POST /api/admin/users/:id/password`), then re-enrol             |
+| `CHALLENGE_EXPIRED`            | The 2FA step waited more than five minutes                 | Log in again; the challenge is single use                                                      |
+| `OLD_KEY_MISSING`              | Rotation attempted without `APP_ENCRYPTION_KEY_OLD`        | Set it to the key currently in use, restart, then rotate                                       |
+| `ASSET_UPLOAD_FAILED` (502)    | Bucket credentials or endpoint wrong, or path style needed | Check `S3_*`, set `S3_FORCE_PATH_STYLE=true` for MinIO                                         |
+| Notification never arrives     | Not enabled, URL empty, event not selected                 | Keamanan sends a test and reports why: `disabled`, `no_url`, `filtered`, `http_error`          |
 
 ## Worker
 
-| Symptom                            | Cause                                                       | Fix                                                        |
-| ---------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
-| Queue grows, nothing processes     | Worker not running, or database unreachable from the worker | `docker compose ps worker`, check its log                  |
-| Jobs stuck `RUNNING`               | Worker died mid-job                                         | Automatic: `recoverStuckJobs` requeues after 15 minutes    |
-| Same job retried forever           | A permanent error is being treated as transient             | Dead letter after `maxAttempts`; look at `last_error`      |
-| Dead letter says `Toko Shopee tidak ditemukan` | The store was deleted after its sync job was queued | Fixed: sync and order jobs drain with `store no longer exists` instead of retrying |
-| Reconcile runs every few minutes   | Normal schedule (`ORDER_RECONCILE_MINUTES`)                 | Raise it if it is noisy                                    |
-| Worker and API disagree about time | Container clocks                                            | Both use UTC from the host; check `date` in each container |
+| Symptom                                        | Cause                                                       | Fix                                                                                |
+| ---------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Queue grows, nothing processes                 | Worker not running, or database unreachable from the worker | `docker compose ps worker`, check its log                                          |
+| Jobs stuck `RUNNING`                           | Worker died mid-job                                         | Automatic: `recoverStuckJobs` requeues after 15 minutes                            |
+| Same job retried forever                       | A permanent error is being treated as transient             | Dead letter after `maxAttempts`; look at `last_error`                              |
+| Dead letter says `Toko Shopee tidak ditemukan` | The store was deleted after its sync job was queued         | Fixed: sync and order jobs drain with `store no longer exists` instead of retrying |
+| Reconcile runs every few minutes               | Normal schedule (`ORDER_RECONCILE_MINUTES`)                 | Raise it if it is noisy                                                            |
+| Worker and API disagree about time             | Container clocks                                            | Both use UTC from the host; check `date` in each container                         |
 
 ## Useful commands
 

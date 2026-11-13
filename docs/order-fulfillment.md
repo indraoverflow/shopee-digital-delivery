@@ -128,14 +128,14 @@ states.
 
 ## Claim and delivery
 
-| Step    | Implementation       | Guarantee                                                                                       |
-| ------- | -------------------- | ----------------------------------------------------------------------------------------------- |
-| Verify  | `verifyClaim`        | Username (and phone suffix per policy), rate limited per IP and per order, every attempt logged |
-| Session | `claim_sessions`     | 30-minute token, sha256 stored, scoped to one order, httpOnly cookie                            |
-| Reveal  | `accessDelivery`     | One transaction: claim row, code taken with `SKIP LOCKED`, delivery log, order state            |
-| File    | `resolveDownload`    | HMAC-signed link, 10-minute TTL, still checked against the claim and a download limit           |
-| Revoke  | `revokeClaim`        | Kills the claim row, so every link already issued stops working                                 |
-| Reissue | `reissueFulfillment` | Fulfilment back to `CLAIMABLE`, old claim kept as history                                       |
+| Step    | Implementation       | Guarantee                                                                                        |
+| ------- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| Verify  | `verifyClaim`        | Username (and phone suffix per policy), rate limited per IP and per order, every attempt logged  |
+| Session | `claim_sessions`     | 30-minute token, sha256 stored, scoped to one order, httpOnly cookie                             |
+| Reveal  | `accessDelivery`     | One transaction: claim row, code taken with `SKIP LOCKED`, delivery log, order state             |
+| File    | `resolveDownload`    | HMAC-signed link, 10-minute TTL, still checked against the claim and a download limit            |
+| Revoke  | `revokeClaim`        | Kills the claim row, so every link already issued stops working                                  |
+| Reissue | `reissueFulfillment` | Fulfilment back to `CLAIMABLE`, old claim kept as history                                        |
 | Manual  | `claim_requests`     | Buyer asks, operator approves, username alone is accepted for that order until the window closes |
 
 Delivery kinds:
@@ -174,9 +174,15 @@ do it for you:
 - The platform reads `logistics/get_shipping_parameter` first, so it sends `pickup`, `dropoff` or
   `non_integrated` according to what that channel actually asks for, and never guesses. A channel that
   cannot be arranged through the API is reported as such instead of a generic failure.
+- **Tandai dikirim otomatis** (Settings → Klaim, on by default) removes the button from the flow
+  entirely: the moment the buyer reveals the product, a `SHIP_ORDER` job is queued with the resi
+  `<prefix><order_sn>` (default `DIGITAL-`), and the worker calls Shopee. The claim never waits on
+  Shopee and never fails because of it; the job is deduped per order, so revealing five items ships once,
+  and a Shopee refusal lands in the dead-letter queue where Monitoring shows it.
 - A shop on a channel that requires no shipping at all needs none of this.
-- It is never a side effect of claiming: moving an order in Shopee on the buyer's behalf is an operator
-  decision, recorded in the audit log and as a `SHIP_CONFIRMED` order event.
+- Every shipment, manual or automatic, is recorded as a `SHIP_CONFIRMED` order event carrying the resi,
+  and in the audit log with `actorType` `ADMIN` or `SYSTEM`, so "why is this order shipped" always has
+  an answer. Turning the switch off returns the decision to the operator without touching the button.
 
 ## Retries and dead letters
 
@@ -206,5 +212,5 @@ their own TTL and are checked on every read.
 | Listing deleted in Shopee          | Product soft deleted, mapping history kept, existing orders unaffected                                           |
 | Shopee returns no phone at all     | Strict policy fails closed, buyer is offered manual verification instead of a dead end                           |
 | Buyer asks twice for manual review | The pending request is returned (`existing: true`), never duplicated                                             |
-| Operator approves the wrong person | Username still has to match; approval only replaces the phone factor, and it expires                            |
+| Operator approves the wrong person | Username still has to match; approval only replaces the phone factor, and it expires                             |
 | Mapping removed after delivery     | Delivered claim untouched; new orders become `UNMAPPED`                                                          |

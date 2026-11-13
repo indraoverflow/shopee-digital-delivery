@@ -33,6 +33,8 @@ const settingsSchema = z.object({
       maxDownloadsPerFulfillment: z.coerce.number().int().min(1).max(100),
       manualRequestDays: z.coerce.number().int().min(1).max(60),
       manualApprovalHours: z.coerce.number().int().min(1).max(168),
+      autoShipOnClaim: z.boolean(),
+      autoShipPrefix: z.string().trim().max(24),
     })
     .partial()
     .optional(),

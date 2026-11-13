@@ -57,13 +57,13 @@ forward `Host` unchanged; the web app relies on it.
 There are two ways to run it, and the difference matters when a hostname has to be added later.
 
 **A. Dashboard-managed tunnel (token mode).** The tunnel is started with `--token`, so the ingress
-list lives in Cloudflare, not in this repository. Add one *Public Hostname* per row:
+list lives in Cloudflare, not in this repository. Add one _Public Hostname_ per row:
 
-| Public hostname       | Type | URL                          |
-| --------------------- | ---- | ---------------------------- |
-| `claim.qansa.web.id`  | HTTP | `localhost:3300`             |
-| `admin.qansa.web.id`  | HTTP | `localhost:3300`             |
-| `api.qansa.web.id`    | HTTP | `localhost:4000`             |
+| Public hostname      | Type | URL              |
+| -------------------- | ---- | ---------------- |
+| `claim.qansa.web.id` | HTTP | `localhost:3300` |
+| `admin.qansa.web.id` | HTTP | `localhost:3300` |
+| `api.qansa.web.id`   | HTTP | `localhost:4000` |
 
 `localhost` works because the cloudflared container runs with host networking
 (`--network host`). If the tunnel runs as a compose service on the project network instead, the targets

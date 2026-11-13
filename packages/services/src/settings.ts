@@ -30,6 +30,15 @@ export interface ClaimSettings {
   manualRequestDays: number;
   /** Hours an approved manual verification stays usable. */
   manualApprovalHours: number;
+  /**
+   * Mark the order shipped in Shopee as soon as the buyer takes the product.
+   * Digital shops use jasa kirim toko, a non-integrated channel, so the platform
+   * has to supply a resi; waiting for an operator means the order can be cancelled
+   * while the buyer already has the product.
+   */
+  autoShipOnClaim: boolean;
+  /** Prefix for the resi the platform assigns when it ships on the buyer's behalf. */
+  autoShipPrefix: string;
 }
 
 /**
@@ -74,6 +83,8 @@ export const DEFAULT_SETTINGS: AllSettings = {
     maxDownloadsPerFulfillment: 5,
     manualRequestDays: 3,
     manualApprovalHours: 24,
+    autoShipOnClaim: true,
+    autoShipPrefix: "DIGITAL-",
   },
   sync: {
     productIntervalMinutes: 30,

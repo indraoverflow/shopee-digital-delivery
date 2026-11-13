@@ -28,6 +28,7 @@ import {
 import { recordAudit } from "./audit.js";
 import { findApprovedWindow } from "./claim-requests.js";
 import { notify } from "./notify.js";
+import { queueAutoShip } from "./shipping.js";
 import { loadSettings } from "./settings.js";
 import type { ServiceDeps } from "./types.js";
 import { nowOf } from "./types.js";
@@ -751,6 +752,11 @@ export async function accessDelivery(
       };
       return payload;
     });
+
+    // The buyer has the product, so Shopee should hear about the shipment now
+    // rather than when someone remembers to press a button. Queued, deduped, and
+    // never allowed to fail the claim itself.
+    await queueAutoShip(deps, context.order, context.store).catch(() => null);
 
     if (completed.value) {
       await notify(deps, {

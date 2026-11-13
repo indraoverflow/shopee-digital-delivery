@@ -35,11 +35,11 @@ erDiagram
 
 ### Identity and access
 
-| Table      | Key columns                                                  | Notes                                                    |
-| ---------- | ------------------------------------------------------------ | -------------------------------------------------------- |
-| `users`    | `email` (unique, lower-cased index), `password_hash`, `role`, `totp_secret_enc`, `recovery_code_hashes` | scrypt hash, TOTP secret encrypted with the app key |
-| `sessions` | `token_hash` (unique), `expires_at`, `revoked_at`            | The cookie carries the token, the row carries its sha256 |
-| `login_challenges` | `token_hash` (unique), `expires_at`, `attempts`, `consumed_at` | The half-authenticated 2FA step: 5 minutes, single use, 5 tries |
+| Table              | Key columns                                                                                             | Notes                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `users`            | `email` (unique, lower-cased index), `password_hash`, `role`, `totp_secret_enc`, `recovery_code_hashes` | scrypt hash, TOTP secret encrypted with the app key             |
+| `sessions`         | `token_hash` (unique), `expires_at`, `revoked_at`                                                       | The cookie carries the token, the row carries its sha256        |
+| `login_challenges` | `token_hash` (unique), `expires_at`, `attempts`, `consumed_at`                                          | The half-authenticated 2FA step: 5 minutes, single use, 5 tries |
 
 Roles: `OWNER`, `ADMIN`, `OPERATOR`, `VIEWER`. Permissions live in code
 (`packages/core/src/permissions.ts`) so a role change cannot leave a stale grant.
@@ -74,17 +74,17 @@ Roles: `OWNER`, `ADMIN`, `OPERATOR`, `VIEWER`. Permissions live in code
 | `claims`         | `fulfillment_id`, `status`, `deliveries_used`, `revoked_at`                               | Unique per (fulfilment, session)                                      |
 | `claim_attempts` | `order_sn`, `ip`, `success`, `reason`                                                     | Rate limiting and abuse analysis                                      |
 | `delivery_logs`  | `claim_id`, `kind`, `reference`, `ip`                                                     | Reveals carry `reference = 'reveal'`; downloads carry the storage key |
-| `claim_requests` | `order_id` (one pending per order, partial unique), `status`, `contact`, `approved_until`  | Manual verification queue and its time-boxed approval window          |
+| `claim_requests` | `order_id` (one pending per order, partial unique), `status`, `contact`, `approved_until` | Manual verification queue and its time-boxed approval window          |
 
 ### Operations
 
-| Table             | Key columns                                                                             | Notes                                   |
-| ----------------- | --------------------------------------------------------------------------------------- | --------------------------------------- |
-| `jobs`            | `type`, `payload`, `dedupe_key` (unique among `QUEUED`/`RUNNING`), `run_at`, `attempts` | Table-backed queue                      |
-| `webhook_events`  | `body_hash` unique, `signature_valid`, `status`, `order_sn`                             | Duplicate guard and audit of every push |
-| `sync_jobs`       | `store_id`, `type`, `status`, `stats`, `error`                                          | One row per manual or scheduled sync    |
-| `audit_logs`      | `action`, `actor_label`, `target_type`, `target_id`, `metadata`, `seq`, `prev_hash`, `entry_hash` | Hash-chained administrative actions |
-| `system_settings` | `key` primary key, `value` jsonb                                                        | `branding`, `claim`, `sync`, `notify`   |
+| Table             | Key columns                                                                                       | Notes                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `jobs`            | `type`, `payload`, `dedupe_key` (unique among `QUEUED`/`RUNNING`), `run_at`, `attempts`           | Table-backed queue                      |
+| `webhook_events`  | `body_hash` unique, `signature_valid`, `status`, `order_sn`                                       | Duplicate guard and audit of every push |
+| `sync_jobs`       | `store_id`, `type`, `status`, `stats`, `error`                                                    | One row per manual or scheduled sync    |
+| `audit_logs`      | `action`, `actor_label`, `target_type`, `target_id`, `metadata`, `seq`, `prev_hash`, `entry_hash` | Hash-chained administrative actions     |
+| `system_settings` | `key` primary key, `value` jsonb                                                                  | `branding`, `claim`, `sync`, `notify`   |
 
 ## Indexes that matter
 

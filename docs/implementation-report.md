@@ -55,16 +55,16 @@ scripts/smoke.mjs  end-to-end check against a running stack
 | Admin: overview, stores, catalogue, products, orders, claims, monitoring, settings, audit        | Implemented and verified                             |
 | Revoke / reissue / expiry sweep                                                                  | Implemented and verified                             |
 | Worker: retries, dead letters, stale-lock recovery, token refresh, maintenance                   | Implemented and verified                             |
-| Two-factor authentication (TOTP, recovery codes, login challenge)                             | Implemented and verified                             |
-| Console user management (create, role, deactivate, password reset, last-owner guard)           | Implemented and verified                             |
-| Manual verification queue for buyers Shopee's masked phone strands                             | Implemented and verified                             |
-| Hash-chained audit log with a verify endpoint                                                  | Implemented and verified                             |
-| Retention sweep as a worker job and a console action                                           | Implemented and verified                             |
-| Encryption key rotation with dry run                                                           | Implemented and verified against pglite              |
-| S3-compatible object storage (SigV4 implemented directly)                                      | Implemented, verified against a signing fake         |
-| Outbound notification webhook with HMAC                                                        | Implemented and verified                             |
-| Optional console IP allow list (IPv4/IPv6 CIDR)                                                | Implemented and verified                             |
-| nginx rate-limit zones and security headers                                                    | Implemented, `nginx -t` validated                    |
+| Two-factor authentication (TOTP, recovery codes, login challenge)                                | Implemented and verified                             |
+| Console user management (create, role, deactivate, password reset, last-owner guard)             | Implemented and verified                             |
+| Manual verification queue for buyers Shopee's masked phone strands                               | Implemented and verified                             |
+| Hash-chained audit log with a verify endpoint                                                    | Implemented and verified                             |
+| Retention sweep as a worker job and a console action                                             | Implemented and verified                             |
+| Encryption key rotation with dry run                                                             | Implemented and verified against pglite              |
+| S3-compatible object storage (SigV4 implemented directly)                                        | Implemented, verified against a signing fake         |
+| Outbound notification webhook with HMAC                                                          | Implemented and verified                             |
+| Optional console IP allow list (IPv4/IPv6 CIDR)                                                  | Implemented and verified                             |
+| nginx rate-limit zones and security headers                                                      | Implemented, `nginx -t` validated                    |
 
 Not implemented, on purpose: email/SMTP delivery (the webhook covers Slack, n8n and WhatsApp),
 additional marketplaces, and a WAF (that belongs in front of the stack, not inside it).

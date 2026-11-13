@@ -13,27 +13,27 @@ Inspected at commit `9e72ad7` (tag `v0.2.0`), the state this repository pins.
 
 ### What was already there and is reused as-is
 
-| Capability | Where | Notes |
-|---|---|---|
-| HMAC-SHA256 signing for the three API classes | `src/signature.ts` | Base string per class, timestamp in unix seconds, no body in the signature |
-| Signed HTTP client | `src/client.ts` | Unwraps `response`, accepts flat bodies, raises `ShopeeApiError` with the Shopee code |
-| Authorization URL | `src/auth.ts` | Public-class signature over `partner_id + path + timestamp` |
-| Code exchange and refresh | `src/auth.ts` | Accepts the flat token body (`access_token` at the top level) |
-| Push signature | `src/webhook.ts` | `HMAC(partner_key, url + rawBody)`, timing-safe compare, alternate key for console test pushes |
-| Order listing | `src/shop.ts` | Paged by `update_time` with a cursor and a page cap |
-| Diagnostics | `src/verify.ts`, `src/diagnose.ts` | Distinguishes a wrong key from a wrong host, checks clock skew |
+| Capability                                    | Where                              | Notes                                                                                          |
+| --------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| HMAC-SHA256 signing for the three API classes | `src/signature.ts`                 | Base string per class, timestamp in unix seconds, no body in the signature                     |
+| Signed HTTP client                            | `src/client.ts`                    | Unwraps `response`, accepts flat bodies, raises `ShopeeApiError` with the Shopee code          |
+| Authorization URL                             | `src/auth.ts`                      | Public-class signature over `partner_id + path + timestamp`                                    |
+| Code exchange and refresh                     | `src/auth.ts`                      | Accepts the flat token body (`access_token` at the top level)                                  |
+| Push signature                                | `src/webhook.ts`                   | `HMAC(partner_key, url + rawBody)`, timing-safe compare, alternate key for console test pushes |
+| Order listing                                 | `src/shop.ts`                      | Paged by `update_time` with a cursor and a page cap                                            |
+| Diagnostics                                   | `src/verify.ts`, `src/diagnose.ts` | Distinguishes a wrong key from a wrong host, checks clock skew                                 |
 
 That list is the reason this repository exists: the sandbox host differs from the one most guides
 print, the token endpoints answer flat, and every one of those mistakes looks like "wrong credentials".
 
 ### What it did not have, and was added
 
-| Gap | Addition |
-|---|---|
-| No order detail call | `src/orders.ts` — `getOrderDetails`, batched 50 per call, with buyer, address and item fields |
-| No catalogue reads | `src/products.ts` — `listItems`, `listAllItems`, `getItemDetails`, `getItemModels` |
-| Nothing consumed it | This repository |
-| Dependabot findings on the old commit | Tracked upstream; none reach the runtime bundle's public surface |
+| Gap                                   | Addition                                                                                      |
+| ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| No order detail call                  | `src/orders.ts` — `getOrderDetails`, batched 50 per call, with buyer, address and item fields |
+| No catalogue reads                    | `src/products.ts` — `listItems`, `listAllItems`, `getItemDetails`, `getItemModels`            |
+| Nothing consumed it                   | This repository                                                                               |
+| Dependabot findings on the old commit | Tracked upstream; none reach the runtime bundle's public surface                              |
 
 Both additions follow the existing conventions (shop-class signature, capped page walks, typed
 responses) and are covered by 11 new tests upstream, which run in that repository's own CI.
@@ -54,11 +54,22 @@ CI checks out with `submodules: recursive`; Docker builds copy `vendor/` before 
 interface ShopeeGateway {
   buildAuthorizationUrl(input: { redirectUrl: string }): string;
   exchangeCode(input: { code: string; shopId: number }): Promise<TokenSet>;
-  refreshToken(input: { shopId: number; refreshToken: string }): Promise<TokenSet>;
+  refreshToken(input: {
+    shopId: number;
+    refreshToken: string;
+  }): Promise<TokenSet>;
   getShopInfo(access: StoreAccess): Promise<ShopInfoSummary>;
-  listOrdersByUpdateTime(access: StoreAccess, window: { from: number; to: number }): Promise<{ orderSns: string[] }>;
-  getOrders(access: StoreAccess, orderSns: string[]): Promise<NormalisedOrder[]>;
-  listProducts(access: StoreAccess): Promise<{ products: NormalisedProduct[]; truncated: boolean }>;
+  listOrdersByUpdateTime(
+    access: StoreAccess,
+    window: { from: number; to: number },
+  ): Promise<{ orderSns: string[] }>;
+  getOrders(
+    access: StoreAccess,
+    orderSns: string[],
+  ): Promise<NormalisedOrder[]>;
+  listProducts(
+    access: StoreAccess,
+  ): Promise<{ products: NormalisedProduct[]; truncated: boolean }>;
 }
 ```
 
@@ -78,17 +89,17 @@ and on each fixture store, so a simulation is never mistaken for a live connecti
 
 ## Endpoints used
 
-| Purpose | Endpoint | Class |
-|---|---|---|
-| Consent screen | `GET /api/v2/shop/auth_partner` | public |
-| Code exchange | `POST /api/v2/auth/token/get` | public |
-| Token refresh | `POST /api/v2/auth/access_token/get` | public |
-| Shop identity | `GET /api/v2/shop/get_shop_info` | shop |
-| Order list (reconciliation) | `GET /api/v2/order/get_order_list` | shop |
-| Order detail | `GET /api/v2/order/get_order_detail` | shop |
-| Item list | `GET /api/v2/product/get_item_list` | shop |
-| Item details | `GET /api/v2/product/get_item_base_info` | shop |
-| Variations | `GET /api/v2/product/get_model_list` | shop |
+| Purpose                     | Endpoint                                 | Class  |
+| --------------------------- | ---------------------------------------- | ------ |
+| Consent screen              | `GET /api/v2/shop/auth_partner`          | public |
+| Code exchange               | `POST /api/v2/auth/token/get`            | public |
+| Token refresh               | `POST /api/v2/auth/access_token/get`     | public |
+| Shop identity               | `GET /api/v2/shop/get_shop_info`         | shop   |
+| Order list (reconciliation) | `GET /api/v2/order/get_order_list`       | shop   |
+| Order detail                | `GET /api/v2/order/get_order_detail`     | shop   |
+| Item list                   | `GET /api/v2/product/get_item_list`      | shop   |
+| Item details                | `GET /api/v2/product/get_item_base_info` | shop   |
+| Variations                  | `GET /api/v2/product/get_model_list`     | shop   |
 
 Pushes: code `3` (order status) and code `2` (shop deauthorization) are handled; any other code is
 recorded and ignored, visible in Monitoring.
@@ -155,13 +166,14 @@ cancels an unshipped order, and that would refund a product that was already del
 
    A pass means the key belongs to that partner in that environment. `error_sign` on every host means
    the key is wrong; `invalid_partner_id` means the id does not exist in that environment.
+
 7. **Authorize one store** through the console, then run a product sync and one order reconciliation
    and compare counts against Seller Center before enabling automatic fulfilment for real customers.
 
 ## Sandbox notes
 
-- The sandbox host is usually `https://openplatform.sandbox.test-stable.shopee.sg`. Read *Request
-  URL* in the console's API Test Tool rather than trusting a guide; `SHOPEE_BASE_URL` overrides it.
+- The sandbox host is usually `https://openplatform.sandbox.test-stable.shopee.sg`. Read _Request
+  URL_ in the console's API Test Tool rather than trusting a guide; `SHOPEE_BASE_URL` overrides it.
 - `partner.test-stable.shopeemobile.com` finds the partner but rejects valid signatures, which looks
   like a wrong key. That is the single most common false diagnosis.
 - Sandbox shops have no real digital listings; the fixture gateway is usually faster for building the

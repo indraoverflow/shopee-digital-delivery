@@ -45,6 +45,8 @@ interface SettingsResponse {
       maxDownloadsPerFulfillment: number;
       manualRequestDays: number;
       manualApprovalHours: number;
+      autoShipOnClaim: boolean;
+      autoShipPrefix: string;
     };
     sync: {
       productIntervalMinutes: number;
@@ -109,6 +111,8 @@ export default function SettingsPage() {
           ),
           manualRequestDays: Number(form.claim.manualRequestDays),
           manualApprovalHours: Number(form.claim.manualApprovalHours),
+          autoShipOnClaim: form.claim.autoShipOnClaim,
+          autoShipPrefix: form.claim.autoShipPrefix,
         },
         sync: {
           productIntervalMinutes: Number(form.sync.productIntervalMinutes),
@@ -299,6 +303,51 @@ export default function SettingsPage() {
                     />
                   </Field>
                 ))}
+
+                {/* Digital orders are delivered by the portal, so Shopee has to be
+                    told they were shipped; waiting for an operator is how an order
+                    gets cancelled after the buyer already has the product. */}
+                <div className="flex items-center justify-between rounded-lg bg-canvas px-3 py-2.5 ring-1 ring-inset ring-line">
+                  <div>
+                    <p className="text-[12.5px] font-medium text-ink-800">
+                      Tandai dikirim otomatis
+                    </p>
+                    <p className="text-[11.5px] text-ink-500">
+                      Begitu pembeli membuka produknya, pesanan langsung
+                      ditandai dikirim di Shopee dengan nomor resi di bawah.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.claim.autoShipOnClaim}
+                    onCheckedChange={(value) =>
+                      setForm({
+                        ...form,
+                        claim: { ...form.claim, autoShipOnClaim: value },
+                      })
+                    }
+                    label="Aktif"
+                  />
+                </div>
+
+                <Field
+                  label="Awalan nomor resi"
+                  hint="Resi diisi awalan ini ditambah nomor pesanan"
+                >
+                  <Input
+                    value={form.claim.autoShipPrefix}
+                    maxLength={24}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        claim: {
+                          ...form.claim,
+                          autoShipPrefix: event.target.value,
+                        },
+                      })
+                    }
+                    disabled={!editable || !form.claim.autoShipOnClaim}
+                  />
+                </Field>
               </div>
             )}
           </SectionCard>

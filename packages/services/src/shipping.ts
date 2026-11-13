@@ -3,6 +3,8 @@ import { schema } from "@qansa/db";
 import { eq } from "drizzle-orm";
 import { recordAudit } from "./audit.js";
 import { getStoreAccess } from "./tokens.js";
+import { enqueue } from "./queue.js";
+import { loadSettings } from "./settings.js";
 import type { ServiceDeps } from "./types.js";
 import { nowOf } from "./types.js";
 
@@ -22,7 +24,7 @@ export interface ShipOrderInput {
   orderId: string;
   /** The resi the seller would type in the seller centre; required by a non-integrated channel. */
   trackingNumber?: string | null;
-  actor: { id: string; email: string };
+  actor: { id: string; email: string; system?: boolean };
   ip?: string | null;
 }
 
@@ -35,11 +37,17 @@ export interface ShipOrderResult {
   alreadyShipped: boolean;
 }
 
-export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Promise<ShipOrderResult> {
+export async function markShipped(
+  deps: ServiceDeps,
+  input: ShipOrderInput,
+): Promise<ShipOrderResult> {
   const [row] = await deps.db
     .select({ order: schema.orders, store: schema.shopeeStores })
     .from(schema.orders)
-    .innerJoin(schema.shopeeStores, eq(schema.shopeeStores.id, schema.orders.storeId))
+    .innerJoin(
+      schema.shopeeStores,
+      eq(schema.shopeeStores.id, schema.orders.storeId),
+    )
     .where(eq(schema.orders.id, input.orderId))
     .limit(1);
 
@@ -66,21 +74,35 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
   }
 
   if (!deps.gateway.shipOrder) {
-    throw new AppError("SHIP_NOT_SUPPORTED", "Gateway Shopee yang aktif tidak mendukung pengaturan pengiriman.", 501);
+    throw new AppError(
+      "SHIP_NOT_SUPPORTED",
+      "Gateway Shopee yang aktif tidak mendukung pengaturan pengiriman.",
+      501,
+    );
   }
 
   const { access } = await getStoreAccess(deps, store.id);
-  const storeAccess = { shopId: access.shopId, accessToken: access.accessToken };
+  const storeAccess = {
+    shopId: access.shopId,
+    accessToken: access.accessToken,
+  };
 
   // Ask the channel what it needs before calling ship_order: a shop that ships
   // with its own courier (jasa kirim toko, a non-integrated channel) must be given
   // the resi, and saying that plainly beats forwarding Shopee's parameter error.
   const trackingNumber = input.trackingNumber?.trim() ?? "";
   if (!trackingNumber && deps.gateway.getShippingOptions) {
-    const options = await deps.gateway.getShippingOptions(storeAccess, order.orderSn).catch((error: unknown) => {
-      const code = (error as { code?: string }).code ?? "SHIP_FAILED";
-      throw new AppError("SHIP_FAILED", `Tidak bisa membaca metode pengiriman pesanan ini: ${code}`, 502, { shopeeCode: code });
-    });
+    const options = await deps.gateway
+      .getShippingOptions(storeAccess, order.orderSn)
+      .catch((error: unknown) => {
+        const code = (error as { code?: string }).code ?? "SHIP_FAILED";
+        throw new AppError(
+          "SHIP_FAILED",
+          `Tidak bisa membaca metode pengiriman pesanan ini: ${code}`,
+          502,
+          { shopeeCode: code },
+        );
+      });
     if (options.nonIntegrated?.needsTrackingNumber) {
       throw new AppError(
         "TRACKING_NUMBER_REQUIRED",
@@ -92,7 +114,9 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
 
   let result: { shipped: boolean; packageNumber?: string | null };
   try {
-    result = await deps.gateway.shipOrder(storeAccess, order.orderSn, { trackingNumber: trackingNumber || null });
+    result = await deps.gateway.shipOrder(storeAccess, order.orderSn, {
+      trackingNumber: trackingNumber || null,
+    });
   } catch (error) {
     const code = (error as { code?: string }).code ?? "SHIP_FAILED";
     const message = error instanceof Error ? error.message : String(error);
@@ -109,12 +133,19 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
   }
 
   if (!result.shipped) {
-    throw new AppError("SHIP_FAILED", "Shopee tidak mengonfirmasi pengiriman untuk pesanan ini.", 502);
+    throw new AppError(
+      "SHIP_FAILED",
+      "Shopee tidak mengonfirmasi pengiriman untuk pesanan ini.",
+      502,
+    );
   }
 
   const now = nowOf(deps);
   await deps.db.transaction(async (tx) => {
-    await tx.update(schema.orders).set({ shopeeStatus: "SHIPPED", updatedAt: now }).where(eq(schema.orders.id, order.id));
+    await tx
+      .update(schema.orders)
+      .set({ shopeeStatus: "SHIPPED", updatedAt: now })
+      .where(eq(schema.orders.id, order.id));
     await tx.insert(schema.orderEvents).values({
       orderId: order.id,
       type: "SHIP_CONFIRMED",
@@ -127,8 +158,8 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
   });
 
   await recordAudit(deps, {
-    actorType: "ADMIN",
-    actorId: input.actor.id,
+    actorType: input.actor.system ? "SYSTEM" : "ADMIN",
+    actorId: input.actor.system ? null : input.actor.id,
     actorLabel: input.actor.email,
     action: "order.ship",
     targetType: "order",
@@ -149,4 +180,38 @@ export async function markShipped(deps: ServiceDeps, input: ShipOrderInput): Pro
     trackingNumber: trackingNumber || null,
     alreadyShipped: false,
   };
+}
+
+/** Shopee statuses where a shipment is still the seller's to arrange. */
+const AWAITING_SHIPMENT_STATUSES = ["READY_TO_SHIP", "PROCESSED"];
+
+/**
+ * Queue the shipment for an order the buyer has just taken.
+ *
+ * The queue is deliberate: a Shopee hiccup must never fail a claim the buyer has
+ * already completed, and a retry is the right answer to a timeout. The job is
+ * deduped per order, so revealing several items of one order ships it once.
+ */
+export async function queueAutoShip(
+  deps: ServiceDeps,
+  order: { id: string; orderSn: string; shopeeStatus: string | null },
+  store: { id: string },
+): Promise<string | null> {
+  const settings = await loadSettings(deps);
+  if (!settings.claim.autoShipOnClaim) return null;
+
+  const status = (order.shopeeStatus ?? "").toUpperCase();
+  if (!AWAITING_SHIPMENT_STATUSES.includes(status)) return null;
+
+  return enqueue(deps, {
+    type: "SHIP_ORDER",
+    payload: {
+      orderId: order.id,
+      orderSn: order.orderSn,
+      storeId: store.id,
+      trackingNumber: `${settings.claim.autoShipPrefix}${order.orderSn}`,
+      reason: "claim",
+    },
+    dedupeKey: `ship:${order.id}`,
+  });
 }

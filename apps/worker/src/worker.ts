@@ -11,6 +11,7 @@ import {
   runOrderSync,
   runProductSync,
   queueStats,
+  markShipped,
   runRetentionSweep,
 } from "@qansa/services";
 import { schema } from "@qansa/db";
@@ -28,8 +29,15 @@ export interface WorkerContext {
 }
 
 /** Whether the store still exists, for jobs that outlive the store by design. */
-async function storeExists(deps: ServiceDeps, storeId: string): Promise<boolean> {
-  const [row] = await deps.db.select({ id: schema.shopeeStores.id }).from(schema.shopeeStores).where(eq(schema.shopeeStores.id, storeId)).limit(1);
+async function storeExists(
+  deps: ServiceDeps,
+  storeId: string,
+): Promise<boolean> {
+  const [row] = await deps.db
+    .select({ id: schema.shopeeStores.id })
+    .from(schema.shopeeStores)
+    .where(eq(schema.shopeeStores.id, storeId))
+    .limit(1);
   return Boolean(row);
 }
 
@@ -77,12 +85,43 @@ export async function handleJob(
       return `state=${summary.state}`;
     }
 
+    case "SHIP_ORDER": {
+      // The buyer already has the product; this only tells Shopee so, using the
+      // resi the platform assigned (or the one an operator typed).
+      const orderId =
+        typeof job.payload.orderId === "string" ? job.payload.orderId : null;
+      if (!orderId) throw new Error("SHIP_ORDER requires orderId");
+      const trackingNumber =
+        typeof job.payload.trackingNumber === "string"
+          ? job.payload.trackingNumber
+          : null;
+
+      const result = await markShipped(deps, {
+        orderId,
+        trackingNumber,
+        actor: { id: "system", email: "system", system: true },
+      });
+      if (result.alreadyShipped) return "already shipped";
+      logger.info(
+        {
+          jobId: job.id,
+          orderSn: result.orderSn,
+          trackingNumber: result.trackingNumber,
+        },
+        "order shipped in Shopee",
+      );
+      return `shipped ${result.orderSn}`;
+    }
+
     case "SYNC_PRODUCTS": {
       if (!storeId) throw new Error("SYNC_PRODUCTS requires storeId");
       // A store deleted after the job was queued cannot be synced, now or after
       // six retries: drain it with a note instead of filling the dead-letter queue.
       if (!(await storeExists(deps, storeId))) {
-        logger.warn({ jobId: job.id, storeId }, "sync job referenced a store that no longer exists");
+        logger.warn(
+          { jobId: job.id, storeId },
+          "sync job referenced a store that no longer exists",
+        );
         return "store no longer exists";
       }
       const stats = await runProductSync(deps, {
@@ -98,7 +137,10 @@ export async function handleJob(
     case "SYNC_ORDERS": {
       if (!storeId) throw new Error("SYNC_ORDERS requires storeId");
       if (!(await storeExists(deps, storeId))) {
-        logger.warn({ jobId: job.id, storeId }, "order sync referenced a store that no longer exists");
+        logger.warn(
+          { jobId: job.id, storeId },
+          "order sync referenced a store that no longer exists",
+        );
         return "store no longer exists";
       }
       const stats = await runOrderSync(deps, {

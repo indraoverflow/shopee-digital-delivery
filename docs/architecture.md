@@ -145,12 +145,12 @@ flowchart TB
 Four pieces are optional at runtime, and each is a single interface so the default deployment needs
 nothing extra:
 
-| Seam | Default | Alternative | Why it is a seam |
-|---|---|---|---|
-| Asset storage (`AssetStore`) | local volume | any S3-compatible bucket | Moving files must not touch claim or delivery code |
-| Notifications (`notify`) | disabled | one signed webhook | Slack, n8n and the WhatsApp gateway all speak HTTP |
-| Console access | open | `ADMIN_IP_ALLOWLIST` | A homelab deployment may want the fence; a distributed team may not |
-| Second factor | off per account | TOTP per user | Enforced by the account, not by an environment variable |
+| Seam                         | Default         | Alternative              | Why it is a seam                                                    |
+| ---------------------------- | --------------- | ------------------------ | ------------------------------------------------------------------- |
+| Asset storage (`AssetStore`) | local volume    | any S3-compatible bucket | Moving files must not touch claim or delivery code                  |
+| Notifications (`notify`)     | disabled        | one signed webhook       | Slack, n8n and the WhatsApp gateway all speak HTTP                  |
+| Console access               | open            | `ADMIN_IP_ALLOWLIST`     | A homelab deployment may want the fence; a distributed team may not |
+| Second factor                | off per account | TOTP per user            | Enforced by the account, not by an environment variable             |
 
 ## Two flows, end to end
 

@@ -12,6 +12,7 @@ import { nowOf } from "./types.js";
 
 export const JOB_TYPES = [
   "PROCESS_ORDER",
+  "SHIP_ORDER",
   "SYNC_PRODUCTS",
   "SYNC_ORDERS",
   "EXPIRE_CLAIMS",

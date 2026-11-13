@@ -189,13 +189,13 @@ is audited, and the window is closed by the retention sweep once it passes.
 
 ## Known gaps
 
-| Gap                                               | Impact                                              | Mitigation path                                            |
-| ------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
+| Gap                                               | Impact                                               | Mitigation path                                            |
+| ------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------- |
 | WAF is deployment-side                            | Volumetric abuse reaches Fastify if exposed directly | Cloudflare in front (recommended), or nginx `limit_req`    |
-| Codes are revealed once, then stored by the buyer | Cannot be recalled                                  | Standard for licence keys; revocation stops future reveals |
-| Single logical encryption key                      | One rotation event for everything                   | Rotation is implemented; key ids would allow a staged run  |
-| Audit chain is tamper-evident, not tamper-proof   | Someone with database write access can rewrite all  | Ship the head hash to an append-only store if needed       |
-| Manual approval depends on operator judgement     | A careless operator can approve the wrong person    | Reviewed by role, time-boxed, fully audited                |
+| Codes are revealed once, then stored by the buyer | Cannot be recalled                                   | Standard for licence keys; revocation stops future reveals |
+| Single logical encryption key                     | One rotation event for everything                    | Rotation is implemented; key ids would allow a staged run  |
+| Audit chain is tamper-evident, not tamper-proof   | Someone with database write access can rewrite all   | Ship the head hash to an append-only store if needed       |
+| Manual approval depends on operator judgement     | A careless operator can approve the wrong person     | Reviewed by role, time-boxed, fully audited                |
 
 ## Checklist before going live
 

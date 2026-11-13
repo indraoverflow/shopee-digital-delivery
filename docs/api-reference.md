@@ -53,7 +53,12 @@ Conventions:
 ### `POST /api/claim/request`
 
 ```json
-{ "orderSn": "260101PXL0001", "buyerUsername": "rina_kurnia", "contact": "rina@example.com", "note": "nomor HP saya ganti" }
+{
+  "orderSn": "260101PXL0001",
+  "buyerUsername": "rina_kurnia",
+  "contact": "rina@example.com",
+  "note": "nomor HP saya ganti"
+}
 ```
 
 `201` when a request is created, `200` with `existing: true` when one is already waiting. An unknown
@@ -127,14 +132,14 @@ email and wrong password.
 When the account has 2FA enabled, `/api/auth/login` answers `200` with
 `{ mfaRequired: true, challengeToken, expiresAt }` and **no session cookie**.
 
-| Method | Path                          | Body                                  | Notes                                                     |
-| ------ | ----------------------------- | ------------------------------------- | --------------------------------------------------------- |
-| POST   | `/api/auth/2fa/challenge`     | `{ challengeToken, token }`           | Exchanges a challenge for a session; 20 per 5 minutes      |
-| GET    | `/api/auth/2fa`               | –                                     | `{ enabled, recoveryCodesRemaining }`                      |
-| POST   | `/api/auth/2fa/enroll`        | –                                     | `{ secret, otpauth, issuer, account }`, unconfirmed         |
-| POST   | `/api/auth/2fa/enroll/confirm`| `{ token }`                           | Enables 2FA, returns ten recovery codes exactly once       |
-| POST   | `/api/auth/2fa/recovery-codes`| `{ token }`                           | Replaces every unused recovery code                        |
-| POST   | `/api/auth/2fa/disable`       | `{ password }`                        | Requires the account password                              |
+| Method | Path                           | Body                        | Notes                                                 |
+| ------ | ------------------------------ | --------------------------- | ----------------------------------------------------- |
+| POST   | `/api/auth/2fa/challenge`      | `{ challengeToken, token }` | Exchanges a challenge for a session; 20 per 5 minutes |
+| GET    | `/api/auth/2fa`                | –                           | `{ enabled, recoveryCodesRemaining }`                 |
+| POST   | `/api/auth/2fa/enroll`         | –                           | `{ secret, otpauth, issuer, account }`, unconfirmed   |
+| POST   | `/api/auth/2fa/enroll/confirm` | `{ token }`                 | Enables 2FA, returns ten recovery codes exactly once  |
+| POST   | `/api/auth/2fa/recovery-codes` | `{ token }`                 | Replaces every unused recovery code                   |
+| POST   | `/api/auth/2fa/disable`        | `{ password }`              | Requires the account password                         |
 
 `MFA_INVALID` (401) carries `details.remaining`; `CHALLENGE_EXPIRED` (401) means start the login again.
 
@@ -189,11 +194,11 @@ rejected by the unique index, not silently merged.
 
 ## Orders
 
-| Method | Path                           | Permission   | Notes                                                        |
-| ------ | ------------------------------ | ------------ | ------------------------------------------------------------ |
-| GET    | `/api/admin/orders`            | `order:read` | `state`, `storeId`, `query`, `mapping=all\|unmapped\|mapped` |
-| GET    | `/api/admin/orders/:id`        | `order:read` | Order, items, fulfilments, claims, events, deliveries        |
-| POST   | `/api/admin/orders/:id/resync` | `order:write` | Requeue the pipeline for one order                          |
+| Method | Path                           | Permission    | Notes                                                        |
+| ------ | ------------------------------ | ------------- | ------------------------------------------------------------ |
+| GET    | `/api/admin/orders`            | `order:read`  | `state`, `storeId`, `query`, `mapping=all\|unmapped\|mapped` |
+| GET    | `/api/admin/orders/:id`        | `order:read`  | Order, items, fulfilments, claims, events, deliveries        |
+| POST   | `/api/admin/orders/:id/resync` | `order:write` | Requeue the pipeline for one order                           |
 | POST   | `/api/admin/orders/:id/ship`   | `order:write` | Arrange shipment in Shopee (logistics `ship_order`)          |
 
 `POST /api/admin/orders/:id/ship` is the only route that writes back to Shopee. Body:
@@ -218,25 +223,25 @@ delivered yet (`ORDER_NOT_READY`, 409), and maps a channel that cannot be arrang
 
 ## Operations
 
-| Method | Path                        | Permission        | Notes                                                          |
-| ------ | --------------------------- | ----------------- | -------------------------------------------------------------- |
-| GET    | `/api/admin/overview`       | `overview:read`   | Counters, 14-day series, recent orders, activity               |
-| GET    | `/api/admin/monitoring`     | `monitoring:read` | Webhooks, queue, dead jobs, failed syncs, token health, alerts |
-| GET    | `/api/admin/webhook-events` | `monitoring:read` | `limit` (max 200)                                              |
-| GET    | `/api/admin/settings`       | `overview:read`   | Effective settings plus defaults                               |
-| PATCH  | `/api/admin/settings`       | `settings:write`  | `{ branding?, claim?, sync?, notify? }`                        |
-| GET    | `/api/admin/audit-logs`     | `audit:read`      | `action`, `actorId` filters                                    |
-| GET    | `/api/admin/claim-requests` | `claim:read`      | `status`, paging, joined with order and reviewer               |
-| POST   | `/api/admin/claim-requests/:id/review` | `claim:write` | `{ decision: APPROVED\|REJECTED, note?, hours? }`      |
-| GET    | `/api/admin/users`          | `user:write`      | Accounts, role, 2FA state, last owner flag                     |
-| POST   | `/api/admin/users`          | `user:write`      | `{ email, name, role, password? }` → generated password once   |
-| PATCH  | `/api/admin/users/:id`      | `user:write`      | `{ name?, role?, isActive? }`; refuses the last owner          |
-| POST   | `/api/admin/users/:id/password` | `user:write`  | Resets the password and revokes every session                  |
-| GET    | `/api/admin/security/audit-chain` | `audit:read` | `limit`; replays the hash chain, reports `brokenAt`            |
-| GET    | `/api/admin/security/retention`   | `settings:write` | What a sweep would delete                                 |
-| POST   | `/api/admin/security/retention`   | `settings:write` | `{ confirm: "HAPUS" }` runs the sweep                      |
-| POST   | `/api/admin/security/rotate-key`  | `settings:write` | `{ confirm: "ROTASI", dryRun?, oldKey? }`                  |
-| POST   | `/api/admin/security/notify-test` | `settings:write` | Sends one notification, reports `delivered` / `reason`     |
+| Method | Path                                   | Permission        | Notes                                                          |
+| ------ | -------------------------------------- | ----------------- | -------------------------------------------------------------- |
+| GET    | `/api/admin/overview`                  | `overview:read`   | Counters, 14-day series, recent orders, activity               |
+| GET    | `/api/admin/monitoring`                | `monitoring:read` | Webhooks, queue, dead jobs, failed syncs, token health, alerts |
+| GET    | `/api/admin/webhook-events`            | `monitoring:read` | `limit` (max 200)                                              |
+| GET    | `/api/admin/settings`                  | `overview:read`   | Effective settings plus defaults                               |
+| PATCH  | `/api/admin/settings`                  | `settings:write`  | `{ branding?, claim?, sync?, notify? }`                        |
+| GET    | `/api/admin/audit-logs`                | `audit:read`      | `action`, `actorId` filters                                    |
+| GET    | `/api/admin/claim-requests`            | `claim:read`      | `status`, paging, joined with order and reviewer               |
+| POST   | `/api/admin/claim-requests/:id/review` | `claim:write`     | `{ decision: APPROVED\|REJECTED, note?, hours? }`              |
+| GET    | `/api/admin/users`                     | `user:write`      | Accounts, role, 2FA state, last owner flag                     |
+| POST   | `/api/admin/users`                     | `user:write`      | `{ email, name, role, password? }` → generated password once   |
+| PATCH  | `/api/admin/users/:id`                 | `user:write`      | `{ name?, role?, isActive? }`; refuses the last owner          |
+| POST   | `/api/admin/users/:id/password`        | `user:write`      | Resets the password and revokes every session                  |
+| GET    | `/api/admin/security/audit-chain`      | `audit:read`      | `limit`; replays the hash chain, reports `brokenAt`            |
+| GET    | `/api/admin/security/retention`        | `settings:write`  | What a sweep would delete                                      |
+| POST   | `/api/admin/security/retention`        | `settings:write`  | `{ confirm: "HAPUS" }` runs the sweep                          |
+| POST   | `/api/admin/security/rotate-key`       | `settings:write`  | `{ confirm: "ROTASI", dryRun?, oldKey? }`                      |
+| POST   | `/api/admin/security/notify-test`      | `settings:write`  | Sends one notification, reports `delivered` / `reason`         |
 
 ## Error codes worth handling in a client
 

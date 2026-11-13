@@ -19,8 +19,12 @@ services:
       file: docker-compose.yml
       service: api
     environment:
-      # The whole point of this service.
+      # The whole point of this service: same code, Shopee's test environment.
       SHOPEE_ENV: sandbox
+      # Inheriting fixture mode would make this container a very convincing demo: it would
+      # answer every call from fixtures and never touch Shopee, which is the opposite of
+      # what a sandbox API is for.
+      SHOPEE_GATEWAY_MODE: live
       SHOPEE_REDIRECT_URL: https://sandbox-api.example.com/api/integration/shopee/callback
     # The live api already publishes the host port, so drop the inherited mapping. This
     # service is reached only through the tunnel, over the compose network.

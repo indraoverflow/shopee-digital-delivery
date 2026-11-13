@@ -93,13 +93,14 @@ payloads in `docs/api-reference.md`.
 ## 6. Test results
 
 ```
-packages/core        72 tests   state machine, eligibility, mapping, verification, crypto, TOTP, audit chain, IP allow list
+packages/core        74 tests   state machine, eligibility, mapping, verification, crypto, TOTP, audit chain, IP allow list
 packages/db           7 tests   migrations, constraints, cascades, partial unique indexes
-packages/services    81 tests   pipeline, claims, 2FA enrolment/login, users, manual verification, retention, rotation, S3, notifications
-apps/api             43 tests   HTTP journey plus 2FA login, users, manual queue, security endpoints
-apps/worker          10 tests   queue dedupe, retry/dead letter, stale locks, handlers, scheduling
+packages/services    91 tests   pipeline, claims, shipping, 2FA enrolment/login, users, manual verification, retention, rotation, S3, notifications
+apps/api             66 tests   HTTP journey, 2FA login, users, manual queue, security, monitoring thresholds, shipping
+apps/worker          12 tests   queue dedupe, retry/dead letter, stale locks, handlers, scheduling, shipment jobs
+apps/web              5 tests   the runtime API proxy
                     ─────────
-                    213 tests   all passing
+                    255 tests   all passing
 ```
 
 Also run and passing:

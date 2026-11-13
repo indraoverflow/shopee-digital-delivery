@@ -16,7 +16,10 @@ function dayKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function seriesOf(rows: Array<{ day: string; value: number | string }>, days: number): Array<{ day: string; value: number }> {
+function seriesOf(
+  rows: Array<{ day: string; value: number | string }>,
+  days: number,
+): Array<{ day: string; value: number }> {
   const byDay = new Map(rows.map((row) => [row.day, Number(row.value)]));
   const today = new Date();
   const out: Array<{ day: string; value: number }> = [];
@@ -51,7 +54,9 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
       .from(schema.shopeeProducts)
       .where(sql`${schema.shopeeProducts.deletedAt} is null`);
 
-    const [digital] = await db.select({ total: sql<number>`count(*)` }).from(schema.digitalProducts);
+    const [digital] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.digitalProducts);
 
     const [orderStats] = await db
       .select({
@@ -79,7 +84,9 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
       .from(schema.claimAttempts);
 
     const [pending] = await db
-      .select({ total: sql<number>`count(*) filter (where ${schema.syncJobs.status} in ('QUEUED','RUNNING'))` })
+      .select({
+        total: sql<number>`count(*) filter (where ${schema.syncJobs.status} in ('QUEUED','RUNNING'))`,
+      })
       .from(schema.syncJobs);
 
     const [unmapped] = await db
@@ -90,8 +97,13 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
     const [unmappedListings] = await db
       .select({ total: sql<number>`count(*)` })
       .from(schema.shopeeProducts)
-      .leftJoin(schema.productMappings, sql`${schema.productMappings.shopeeProductId} = ${schema.shopeeProducts.id}`)
-      .where(sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null`);
+      .leftJoin(
+        schema.productMappings,
+        sql`${schema.productMappings.shopeeProductId} = ${schema.shopeeProducts.id}`,
+      )
+      .where(
+        sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null`,
+      );
 
     const orderSeries = await db
       .select({
@@ -101,7 +113,9 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
       .from(schema.orders)
       // The parameter is cast explicitly: with prepared statements disabled,
       // postgres-js cannot infer the type of a bare Date inside sql``.
-      .where(sql`${schema.orders.createdAt} >= ${since.toISOString()}::timestamptz`)
+      .where(
+        sql`${schema.orders.createdAt} >= ${since.toISOString()}::timestamptz`,
+      )
       .groupBy(sql`1`)
       .orderBy(sql`1`);
 
@@ -111,7 +125,9 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         value: sql<number>`count(*)`,
       })
       .from(schema.claims)
-      .where(sql`${schema.claims.createdAt} >= ${since.toISOString()}::timestamptz`)
+      .where(
+        sql`${schema.claims.createdAt} >= ${since.toISOString()}::timestamptz`,
+      )
       .groupBy(sql`1`)
       .orderBy(sql`1`);
 
@@ -126,7 +142,10 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         storeLabel: schema.shopeeStores.label,
       })
       .from(schema.orders)
-      .innerJoin(schema.shopeeStores, sql`${schema.shopeeStores.id} = ${schema.orders.storeId}`)
+      .innerJoin(
+        schema.shopeeStores,
+        sql`${schema.shopeeStores.id} = ${schema.orders.storeId}`,
+      )
       .orderBy(desc(schema.orders.syncedAt))
       .limit(6);
 
@@ -143,8 +162,16 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
       .limit(8);
 
     return {
-      stores: { total: Number(stores?.total ?? 0), connected: Number(stores?.connected ?? 0), errored: Number(stores?.errored ?? 0) },
-      products: { shopee: Number(products?.total ?? 0), digital: Number(digital?.total ?? 0), unmappedListings: Number(unmappedListings?.total ?? 0) },
+      stores: {
+        total: Number(stores?.total ?? 0),
+        connected: Number(stores?.connected ?? 0),
+        errored: Number(stores?.errored ?? 0),
+      },
+      products: {
+        shopee: Number(products?.total ?? 0),
+        digital: Number(digital?.total ?? 0),
+        unmappedListings: Number(unmappedListings?.total ?? 0),
+      },
       orders: {
         total: Number(orderStats?.total ?? 0),
         paid: Number(orderStats?.paid ?? 0),
@@ -161,7 +188,10 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         attempts24h: Number(attempts?.total24h ?? 0),
       },
       pendingSync: Number(pending?.total ?? 0),
-      series: { orders: seriesOf(orderSeries, 14), claims: seriesOf(claimSeries, 14) },
+      series: {
+        orders: seriesOf(orderSeries, 14),
+        claims: seriesOf(claimSeries, 14),
+      },
       recentOrders,
       activity,
       gatewayMode: ctx.config.gatewayMode,
@@ -176,6 +206,7 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         total24h: sql<number>`count(*) filter (where ${schema.webhookEvents.receivedAt} > now() - interval '24 hours')`,
         failed24h: sql<number>`count(*) filter (where ${schema.webhookEvents.status} = 'FAILED' and ${schema.webhookEvents.receivedAt} > now() - interval '24 hours')`,
         invalidSignature24h: sql<number>`count(*) filter (where ${schema.webhookEvents.signatureValid} = false and ${schema.webhookEvents.receivedAt} > now() - interval '24 hours')`,
+        invalidSignature15m: sql<number>`count(*) filter (where ${schema.webhookEvents.signatureValid} = false and ${schema.webhookEvents.receivedAt} > now() - interval '15 minutes')`,
         duplicates24h: sql<number>`count(*) filter (where ${schema.webhookEvents.status} = 'DUPLICATE' and ${schema.webhookEvents.receivedAt} > now() - interval '24 hours')`,
       })
       .from(schema.webhookEvents);
@@ -198,7 +229,13 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
     const queue = await queueStats(ctx.deps);
 
     const deadJobs = await db
-      .select({ id: schema.jobs.id, type: schema.jobs.type, attempts: schema.jobs.attempts, lastError: schema.jobs.lastError, completedAt: schema.jobs.completedAt })
+      .select({
+        id: schema.jobs.id,
+        type: schema.jobs.type,
+        attempts: schema.jobs.attempts,
+        lastError: schema.jobs.lastError,
+        completedAt: schema.jobs.completedAt,
+      })
       .from(schema.jobs)
       .where(sql`${schema.jobs.status} = 'DEAD'`)
       .orderBy(desc(schema.jobs.completedAt))
@@ -214,7 +251,10 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         storeLabel: schema.shopeeStores.label,
       })
       .from(schema.syncJobs)
-      .innerJoin(schema.shopeeStores, sql`${schema.shopeeStores.id} = ${schema.syncJobs.storeId}`)
+      .innerJoin(
+        schema.shopeeStores,
+        sql`${schema.shopeeStores.id} = ${schema.syncJobs.storeId}`,
+      )
       .where(sql`${schema.syncJobs.status} in ('FAILED','DEAD')`)
       .orderBy(desc(schema.syncJobs.createdAt))
       .limit(10);
@@ -228,7 +268,10 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         expiresAt: schema.shopeeTokens.expiresAt,
       })
       .from(schema.shopeeStores)
-      .leftJoin(schema.shopeeTokens, sql`${schema.shopeeTokens.storeId} = ${schema.shopeeStores.id}`);
+      .leftJoin(
+        schema.shopeeTokens,
+        sql`${schema.shopeeTokens.storeId} = ${schema.shopeeStores.id}`,
+      );
 
     const [unmappedItems] = await db
       .select({ total: sql<number>`count(*)` })
@@ -238,8 +281,13 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
     const [unmappedListings] = await db
       .select({ total: sql<number>`count(*)` })
       .from(schema.shopeeProducts)
-      .leftJoin(schema.productMappings, sql`${schema.productMappings.shopeeProductId} = ${schema.shopeeProducts.id}`)
-      .where(sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null`);
+      .leftJoin(
+        schema.productMappings,
+        sql`${schema.productMappings.shopeeProductId} = ${schema.shopeeProducts.id}`,
+      )
+      .where(
+        sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null`,
+      );
 
     /**
      * Digital orders that are already delivered through the portal but still sit
@@ -256,28 +304,63 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         storeLabel: schema.shopeeStores.label,
       })
       .from(schema.orders)
-      .innerJoin(schema.shopeeStores, sql`${schema.shopeeStores.id} = ${schema.orders.storeId}`)
-      .where(sql`${schema.orders.shopeeStatus} = 'READY_TO_SHIP' and ${schema.orders.state} in ('FULFILLED','CLAIMED','COMPLETED')`)
+      .innerJoin(
+        schema.shopeeStores,
+        sql`${schema.shopeeStores.id} = ${schema.orders.storeId}`,
+      )
+      .where(
+        sql`${schema.orders.shopeeStatus} = 'READY_TO_SHIP' and ${schema.orders.state} in ('FULFILLED','CLAIMED','COMPLETED')`,
+      )
       .orderBy(schema.orders.createdAt)
       .limit(50);
 
     const oldestHours = awaitingShipment[0]?.createdAt
-      ? Math.round((Date.now() - awaitingShipment[0].createdAt.getTime()) / 3_600_000)
+      ? Math.round(
+          (Date.now() - awaitingShipment[0].createdAt.getTime()) / 3_600_000,
+        )
       : null;
 
     const attempts = await recentClaimAttempts(ctx.deps, 10);
 
-    const alerts: Array<{ level: "warning" | "critical"; code: string; message: string }> = [];
-    if (Number(webhooks?.invalidSignature24h ?? 0) > 0) {
-      alerts.push({ level: "critical", code: "WEBHOOK_SIGNATURE", message: "Ada push dengan tanda tangan tidak valid dalam 24 jam terakhir" });
+    const alerts: Array<{
+      level: "warning" | "critical";
+      code: string;
+      message: string;
+    }> = [];
+    // One forged push is noise: scanners and every preflight run produce one. A run
+    // of them inside fifteen minutes is a wrong shared secret or someone probing on
+    // purpose, and that is worth waking up for.
+    const invalidSignatures = Number(webhooks?.invalidSignature15m ?? 0);
+    if (invalidSignatures >= 3) {
+      alerts.push({
+        level: "critical",
+        code: "WEBHOOK_SIGNATURE",
+        message: `${invalidSignatures} push dengan tanda tangan tidak valid dalam 15 menit terakhir`,
+      });
     }
-    if (queue.dead > 0) alerts.push({ level: "critical", code: "DEAD_JOBS", message: `${queue.dead} job berhenti di dead letter` });
+    if (queue.dead > 0)
+      alerts.push({
+        level: "critical",
+        code: "DEAD_JOBS",
+        message: `${queue.dead} job berhenti di dead letter`,
+      });
     if (Number(unmappedListings?.total ?? 0) > 0) {
-      alerts.push({ level: "warning", code: "UNMAPPED_LISTINGS", message: `${unmappedListings?.total} produk Shopee belum dipetakan` });
+      alerts.push({
+        level: "warning",
+        code: "UNMAPPED_LISTINGS",
+        message: `${unmappedListings?.total} produk Shopee belum dipetakan`,
+      });
     }
-    const expiring = tokenHealth.filter((row) => row.expiresAt && row.expiresAt.getTime() - Date.now() < 30 * 60_000);
+    const expiring = tokenHealth.filter(
+      (row) =>
+        row.expiresAt && row.expiresAt.getTime() - Date.now() < 30 * 60_000,
+    );
     if (expiring.length > 0) {
-      alerts.push({ level: "warning", code: "TOKEN_EXPIRING", message: `${expiring.length} token toko akan kedaluwarsa dalam 30 menit` });
+      alerts.push({
+        level: "warning",
+        code: "TOKEN_EXPIRING",
+        message: `${expiring.length} token toko akan kedaluwarsa dalam 30 menit`,
+      });
     }
     if (awaitingShipment.length > 0) {
       alerts.push({
@@ -287,7 +370,12 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     const errored = tokenHealth.filter((row) => row.status === "ERROR");
-    if (errored.length > 0) alerts.push({ level: "critical", code: "STORE_ERROR", message: `${errored.length} toko bermasalah: ${errored.map((row) => row.label).join(", ")}` });
+    if (errored.length > 0)
+      alerts.push({
+        level: "critical",
+        code: "STORE_ERROR",
+        message: `${errored.length} toko bermasalah: ${errored.map((row) => row.label).join(", ")}`,
+      });
 
     return {
       webhooks: {
@@ -303,9 +391,14 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
       failedSyncs,
       tokenHealth: tokenHealth.map((row) => ({
         ...row,
-        minutesLeft: row.expiresAt ? Math.round((row.expiresAt.getTime() - Date.now()) / 60_000) : null,
+        minutesLeft: row.expiresAt
+          ? Math.round((row.expiresAt.getTime() - Date.now()) / 60_000)
+          : null,
       })),
-      unmapped: { items: Number(unmappedItems?.total ?? 0), listings: Number(unmappedListings?.total ?? 0) },
+      unmapped: {
+        items: Number(unmappedItems?.total ?? 0),
+        listings: Number(unmappedListings?.total ?? 0),
+      },
       shipping: {
         awaitingShipment: awaitingShipment.length,
         oldestHours,

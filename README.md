@@ -13,16 +13,16 @@ order is theirs. Nobody copies a link into a chat by hand.
 
 ## Status
 
-| Area | State |
-|---|---|
-| Database schema and migrations | 25 tables, applied against PostgreSQL 17 |
-| API | 49 routes, typed end to end (Zod at every boundary) |
-| Buyer portal | Working: verified against a real order, code and file delivery, plus manual verification |
-| Admin console | 13 pages, all wired to the API |
-| Automated tests | 213 tests: unit, integration, HTTP journey, worker |
-| Smoke test | `scripts/smoke.mjs` passes against a live API + worker + PostgreSQL |
-| Shopee connection | `fixture` mode verified; `live` mode needs partner credentials (see below) |
-| Docker | Multi-stage images for API/worker and web, compose stack, nginx |
+| Area                           | State                                                                                    |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| Database schema and migrations | 25 tables, applied against PostgreSQL 17                                                 |
+| API                            | 49 routes, typed end to end (Zod at every boundary)                                      |
+| Buyer portal                   | Working: verified against a real order, code and file delivery, plus manual verification |
+| Admin console                  | 13 pages, all wired to the API                                                           |
+| Automated tests                | 255 tests across 22 files: unit, integration, HTTP journey, worker                       |
+| Smoke test                     | `scripts/smoke.mjs` passes against a live API + worker + PostgreSQL                      |
+| Shopee connection              | `fixture` mode verified; `live` mode needs partner credentials (see below)               |
+| Docker                         | Multi-stage images for API/worker and web, compose stack, nginx                          |
 
 The pipeline, the claim verification, the signed download links and the mapping rules are implemented
 and tested. What is **not** proven is a live Shopee round trip: no partner credentials were available
@@ -31,12 +31,12 @@ store as simulated. `docs/shopee-integration.md` lists the exact steps to switch
 
 ## Screenshots
 
-| Buyer portal | Console overview |
-|---|---|
+| Buyer portal                                       | Console overview                                 |
+| -------------------------------------------------- | ------------------------------------------------ |
 | ![Claim portal](docs/screenshots/claim-portal.png) | ![Overview](docs/screenshots/admin-overview.png) |
 
-| Catalogue and mapping | Orders |
-|---|---|
+| Catalogue and mapping                          | Orders                                       |
+| ---------------------------------------------- | -------------------------------------------- |
 | ![Catalog](docs/screenshots/admin-catalog.png) | ![Orders](docs/screenshots/admin-orders.png) |
 
 ## Architecture
@@ -68,15 +68,15 @@ flowchart LR
   end
 ```
 
-| Component | Responsibility | Why this shape |
-|---|---|---|
-| `apps/web` | Claim portal and console, one Next.js app on two hostnames | Same design system, one deploy, host routing in `proxy.ts` |
-| `apps/api` | HTTP surface, sessions, RBAC, claim verification, delivery | Stateless; can scale horizontally behind nginx |
-| `apps/worker` | Queue consumer, catalogue sync, order pipeline, expiry sweep | Separate process so a slow Shopee call never blocks a buyer |
-| `packages/services` | Domain logic shared by API and worker | The pipeline is written once and tested once |
-| `packages/core` | Pure rules: state machine, eligibility, mapping, verification, crypto | No I/O, so the rules are cheap to test and hard to bypass |
-| `packages/db` | Drizzle schema, migrations, pglite test database | Real SQL in tests without a container |
-| `vendor/shopee-integration` | Signed client, OAuth, push signature (git submodule, pinned) | Shopee protocol code stays in one place, versioned by commit |
+| Component                   | Responsibility                                                        | Why this shape                                               |
+| --------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `apps/web`                  | Claim portal and console, one Next.js app on two hostnames            | Same design system, one deploy, host routing in `proxy.ts`   |
+| `apps/api`                  | HTTP surface, sessions, RBAC, claim verification, delivery            | Stateless; can scale horizontally behind nginx               |
+| `apps/worker`               | Queue consumer, catalogue sync, order pipeline, expiry sweep          | Separate process so a slow Shopee call never blocks a buyer  |
+| `packages/services`         | Domain logic shared by API and worker                                 | The pipeline is written once and tested once                 |
+| `packages/core`             | Pure rules: state machine, eligibility, mapping, verification, crypto | No I/O, so the rules are cheap to test and hard to bypass    |
+| `packages/db`               | Drizzle schema, migrations, pglite test database                      | Real SQL in tests without a container                        |
+| `vendor/shopee-integration` | Signed client, OAuth, push signature (git submodule, pinned)          | Shopee protocol code stays in one place, versioned by commit |
 
 Full rationale in [`docs/architecture.md`](docs/architecture.md).
 
@@ -159,19 +159,19 @@ node --env-file=.env scripts/smoke.mjs
 
 Everything is documented in [`.env.example`](.env.example). The values that matter:
 
-| Variable | Purpose |
-|---|---|
-| `APP_ENCRYPTION_KEY` | 32-byte hex key (AES-256-GCM) for Shopee tokens and activation codes |
-| `DOWNLOAD_SIGNING_SECRET` | HMAC key for expiring download links |
-| `SHOPEE_GATEWAY_MODE` | `fixture` (sample data) or `live` (real API) |
-| `SHOPEE_PARTNER_ID` / `SHOPEE_PARTNER_KEY` | Credentials from the Open Platform console |
-| `SHOPEE_PUSH_URL` | Exact public push URL; the signature covers it |
-| `SHOPEE_REDIRECT_URL` | OAuth callback registered for the app |
-| `CLAIM_ORIGIN` / `ADMIN_ORIGIN` / `API_PUBLIC_ORIGIN` | Public origins used for CORS and download links |
-| `UPLOAD_DIR` | Private volume for digital assets (shared by API and worker) |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Owner account created at first boot |
+| Variable                                              | Purpose                                                              |
+| ----------------------------------------------------- | -------------------------------------------------------------------- |
+| `APP_ENCRYPTION_KEY`                                  | 32-byte hex key (AES-256-GCM) for Shopee tokens and activation codes |
+| `DOWNLOAD_SIGNING_SECRET`                             | HMAC key for expiring download links                                 |
+| `SHOPEE_GATEWAY_MODE`                                 | `fixture` (sample data) or `live` (real API)                         |
+| `SHOPEE_PARTNER_ID` / `SHOPEE_PARTNER_KEY`            | Credentials from the Open Platform console                           |
+| `SHOPEE_PUSH_URL`                                     | Exact public push URL; the signature covers it                       |
+| `SHOPEE_REDIRECT_URL`                                 | OAuth callback registered for the app                                |
+| `CLAIM_ORIGIN` / `ADMIN_ORIGIN` / `API_PUBLIC_ORIGIN` | Public origins used for CORS and download links                      |
+| `UPLOAD_DIR`                                          | Private volume for digital assets (shared by API and worker)         |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD`                      | Owner account created at first boot                                  |
 
-Secrets are never read by the browser: the API returns token *expiry*, never a token.
+Secrets are never read by the browser: the API returns token _expiry_, never a token.
 
 ## How fulfilment works
 
@@ -203,7 +203,7 @@ Details, including the full state diagram, in [`docs/order-fulfillment.md`](docs
 ## Testing
 
 ```bash
-pnpm test         # 213 tests: core rules, SQL/migrations, pipeline, claims, security, HTTP journey, worker
+pnpm test         # 255 tests: core rules, SQL/migrations, pipeline, claims, security, shipping, HTTP journey, worker
 pnpm typecheck    # every package and app, strict mode
 pnpm -r build     # vendor, API/worker bundles, Next.js production build
 ```
@@ -213,7 +213,7 @@ Tests run against **pglite** (PostgreSQL compiled to WASM) with the real migrati
 connects a store, syncs the catalogue, maps a variation, receives a push, claims the product and
 revokes the claim, all through Fastify's injector.
 
-`scripts/smoke.mjs` is the other half: it runs the same path against a *running* stack with a real
+`scripts/smoke.mjs` is the other half: it runs the same path against a _running_ stack with a real
 PostgreSQL, which is what CI cannot prove. `scripts/preflight.mjs` is the go-live gate: environment,
 service, tokens, dead letters, audit chain, public hostnames, and a signed push against a forged one.
 `scripts/verify-s3.ts` does the same for object storage: it writes, reads and deletes an object against

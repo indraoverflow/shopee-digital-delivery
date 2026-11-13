@@ -37,16 +37,17 @@ Symptom first, cause second, fix third.
 
 ## Orders and pushes
 
-| Symptom                                      | Cause                                                                           | Fix                                                                                  |
-| -------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| No orders at all                             | Store not connected, or no orders in the lookback window                        | **Sinkron pesanan**, raise `ORDER_LOOKBACK_HOURS`                                    |
-| Push never appears in Monitoring             | URL not registered, or the tunnel drops the body                                | Check the console's push settings and `SHOPEE_PUSH_URL`                              |
-| Push recorded with `signature_valid = false` | Partner key mismatch, URL mismatch (scheme/path), or a proxy rewriting the body | Compare the registered URL with `SHOPEE_PUSH_URL`; do not let a proxy re-encode JSON |
-| `401 invalid push signature`                 | Same as above                                                                   | Same                                                                                 |
-| Push accepted, order unchanged               | Job failed; see Monitoring → dead letter                                        | Read the last error; fix the cause, then **Proses ulang** on the order               |
-| Order stuck at `INELIGIBLE / NOT_PAID`       | Buyer has not paid                                                              | Nothing to do: the next sync moves it forward                                        |
-| `STATE_HELD` events                          | A late push tried to move a claimed order backwards                             | Expected; the event is the audit record                                              |
-| Buyer claims but sees “Produk belum siap”    | Fulfilment `PENDING`                                                            | Fix the product status, resync the order                                             |
+| Symptom                                         | Cause                                                                           | Fix                                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| No orders at all                                | Store not connected, or no orders in the lookback window                        | **Sinkron pesanan**, raise `ORDER_LOOKBACK_HOURS`                                    |
+| Push never appears in Monitoring                | URL not registered, or the tunnel drops the body                                | Check the console's push settings and `SHOPEE_PUSH_URL`                              |
+| Push recorded with `signature_valid = false`    | Partner key mismatch, URL mismatch (scheme/path), or a proxy rewriting the body | Compare the registered URL with `SHOPEE_PUSH_URL`; do not let a proxy re-encode JSON |
+| `401 invalid push signature`                    | Same as above                                                                   | Same                                                                                 |
+| One `WEBHOOK_SIGNATURE` alert after `preflight` | Expected: the probe sends one deliberately forged push                          | Nothing. The alert needs 3 rejections in 24h before it fires                         |
+| Push accepted, order unchanged                  | Job failed; see Monitoring → dead letter                                        | Read the last error; fix the cause, then **Proses ulang** on the order               |
+| Order stuck at `INELIGIBLE / NOT_PAID`          | Buyer has not paid                                                              | Nothing to do: the next sync moves it forward                                        |
+| `STATE_HELD` events                             | A late push tried to move a claimed order backwards                             | Expected; the event is the audit record                                              |
+| Buyer claims but sees “Produk belum siap”       | Fulfilment `PENDING`                                                            | Fix the product status, resync the order                                             |
 
 ## Buyer claims
 

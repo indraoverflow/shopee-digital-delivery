@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { encryptSecret } from "@qansa/core";
 import { schema } from "@qansa/db";
 import { apiHarness, type ApiHarness } from "./helpers.js";
 
@@ -96,6 +97,109 @@ describe("POST /api/admin/fulfillments/:id/mint", () => {
 
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe("METERAI_DISABLED");
+  });
+
+  it("hands the minted link to an operator and records that they looked", async () => {
+    const fulfillment = await seedFulfillment();
+    const owner = await h.login();
+    const url = "https://e-meterai.co.id/pdfViewer?refid=abc123";
+    await h.db.db
+      .update(schema.fulfillments)
+      .set({
+        mintedSecretEnc: encryptSecret(url, h.config.service.appEncryptionKey),
+        mintedAt: new Date(),
+      })
+      .where(eq(schema.fulfillments.id, fulfillment.id));
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/api/admin/fulfillments/${fulfillment.id}/minted-link`,
+      headers: { cookie: owner.cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ ok: true, url });
+
+    const audits = await h.db.db
+      .select()
+      .from(schema.auditLogs)
+      .where(
+        and(
+          eq(schema.auditLogs.action, "meterai.reveal"),
+          eq(schema.auditLogs.targetId, fulfillment.id),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+    expect(JSON.stringify(audits[0]!.metadata)).not.toContain("abc123"); // the link is the secret, not metadata
+  });
+
+  it("lets a read-only viewer resend the link, because resending is not spending", async () => {
+    const fulfillment = await seedFulfillment();
+    const viewer = await h.login("viewer@qansa.web.id", "viewer-password-2026");
+    await h.db.db
+      .update(schema.fulfillments)
+      .set({
+        mintedSecretEnc: encryptSecret(
+          "https://e-meterai.co.id/pdfViewer?refid=v1",
+          h.config.service.appEncryptionKey,
+        ),
+        mintedAt: new Date(),
+      })
+      .where(eq(schema.fulfillments.id, fulfillment.id));
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/api/admin/fulfillments/${fulfillment.id}/minted-link`,
+      headers: { cookie: viewer.cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it("says plainly when nothing was minted yet", async () => {
+    const fulfillment = await seedFulfillment();
+    const owner = await h.login();
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/api/admin/fulfillments/${fulfillment.id}/minted-link`,
+      headers: { cookie: owner.cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("METERAI_LINK_MISSING");
+  });
+
+  it("refuses to reveal a link for a product that is not e-Meterai", async () => {
+    const fulfillment = await seedFulfillment(false);
+    const owner = await h.login();
+    await h.db.db
+      .update(schema.fulfillments)
+      .set({
+        mintedSecretEnc: encryptSecret(
+          "https://e-meterai.co.id/pdfViewer?refid=x",
+          h.config.service.appEncryptionKey,
+        ),
+        mintedAt: new Date(),
+      })
+      .where(eq(schema.fulfillments.id, fulfillment.id));
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/api/admin/fulfillments/${fulfillment.id}/minted-link`,
+      headers: { cookie: owner.cookie },
+    });
+
+    expect(response.statusCode).toBe(422);
+  });
+
+  it("is closed to an anonymous caller", async () => {
+    const fulfillment = await seedFulfillment();
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/api/admin/fulfillments/${fulfillment.id}/minted-link`,
+    });
+    expect(response.statusCode).toBe(401);
   });
 
   it("never leaks a stored minted secret through the order detail", async () => {

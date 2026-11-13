@@ -4,6 +4,7 @@ import { use, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  Link2,
   RotateCcw,
   ShieldOff,
   Ticket,
@@ -135,6 +136,12 @@ export default function OrderDetailPage({
   // Jasa kirim toko is a non-integrated channel: Shopee wants the resi the seller
   // would otherwise type in the seller centre, so the dialog asks for it.
   const [trackingNumber, setTrackingNumber] = useState("");
+  /** The minted e-Meterai link, fetched only when an operator asks for it. */
+  const [mintedLink, setMintedLink] = useState<{
+    url: string;
+    mintedAt: string;
+  } | null>(null);
+  const [linkBusy, setLinkBusy] = useState<string | null>(null);
   const [revoke, setRevoke] = useState<string | null>(null);
   const [reissue, setReissue] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -158,6 +165,25 @@ export default function OrderDetailPage({
       });
     } finally {
       setBusy(null);
+    }
+  };
+
+  const openMintedLink = async (fulfillmentId: string) => {
+    setLinkBusy(fulfillmentId);
+    try {
+      setMintedLink(
+        await api.get<{ url: string; mintedAt: string }>(
+          `/admin/fulfillments/${fulfillmentId}/minted-link`,
+        ),
+      );
+    } catch (caught) {
+      toast({
+        title: "Tautan tidak bisa dibuka",
+        description: caught instanceof ApiError ? caught.message : "",
+        tone: "danger",
+      });
+    } finally {
+      setLinkBusy(null);
     }
   };
 
@@ -331,12 +357,25 @@ export default function OrderDetailPage({
                     <div className="flex items-center gap-2">
                       {fulfillment.meteraiEnabled ? (
                         fulfillment.hasMintedLink ? (
-                          <Badge tone="success">
-                            Tautan siap{" "}
-                            {fulfillment.mintedAt
-                              ? formatDateTime(fulfillment.mintedAt)
-                              : ""}
-                          </Badge>
+                          can("claim:read") ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              loading={linkBusy === fulfillment.id}
+                              onClick={() =>
+                                void openMintedLink(fulfillment.id)
+                              }
+                            >
+                              <Link2 className="h-3.5 w-3.5" /> Lihat tautan
+                            </Button>
+                          ) : (
+                            <Badge tone="success">
+                              Tautan siap{" "}
+                              {fulfillment.mintedAt
+                                ? formatDateTime(fulfillment.mintedAt)
+                                : ""}
+                            </Badge>
+                          )
                         ) : can("order:write") ? (
                           <Button
                             size="sm"
@@ -558,6 +597,39 @@ export default function OrderDetailPage({
           </TableShell>
         </SectionCard>
       </div>
+
+      <ConfirmDialog
+        open={mintedLink !== null}
+        onOpenChange={(open) => !open && setMintedLink(null)}
+        title="Tautan e-Meterai untuk pesanan ini"
+        description="Tautan ini milik satu pembeli. Setiap kali dibuka di sini, aksesnya tercatat di audit log."
+        confirmLabel="Tutup"
+        onConfirm={() => setMintedLink(null)}
+      >
+        <Field label="Tautan" hint="klik untuk memilih seluruh tautan">
+          <Input
+            readOnly
+            value={mintedLink?.url ?? ""}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+        </Field>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11.5px] text-ink-500">
+            Dibuat {mintedLink ? formatDateTime(mintedLink.mintedAt) : "—"}
+          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              if (!mintedLink) return;
+              void navigator.clipboard.writeText(mintedLink.url);
+              toast({ title: "Tautan disalin" });
+            }}
+          >
+            Salin
+          </Button>
+        </div>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={shipOpen}

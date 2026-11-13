@@ -69,14 +69,14 @@ with the same static key and decrypts back to the credentials. Nothing is printe
 
 The design above is implemented.
 
-| Piece | Where |
-| --- | --- |
-| Credential block, password encrypted with the app key | Settings -> e-Meterai (`settings.meterai`) |
-| Product marker | `digital_products.meterai_enabled`, a checkbox on the product form |
-| The minted value, written once | `fulfillments.minted_secret_enc`, `minted_at`, `minted_by` |
-| Serving it to the buyer | `accessDelivery` returns it as a `LINK` payload |
-| Operator action | `POST /api/admin/fulfillments/:id/mint`, button "Buat tautan" on the order page |
-| Audit | `METERAI_LINK_MINTED` order event plus `meterai.mint` audit row |
+| Piece                                                 | Where                                                                           |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Credential block, password encrypted with the app key | Settings -> e-Meterai (`settings.meterai`)                                      |
+| Product marker                                        | `digital_products.meterai_enabled`, a checkbox on the product form              |
+| The minted value, written once                        | `fulfillments.minted_secret_enc`, `minted_at`, `minted_by`                      |
+| Serving it to the buyer                               | `accessDelivery` returns it as a `LINK` payload                                 |
+| Operator action                                       | `POST /api/admin/fulfillments/:id/mint`, button "Buat tautan" on the order page |
+| Audit                                                 | `METERAI_LINK_MINTED` order event plus `meterai.mint` audit row                 |
 
 Behaviour that matters, all covered by tests:
 
@@ -86,6 +86,11 @@ Behaviour that matters, all covered by tests:
   account as `METERAI_DISABLED`, and neither writes a partial row.
 - **The buyer gets one link.** If a meterai product has no minted link yet, `accessDelivery` answers
   `OUT_OF_STOCK` with "support will follow up" instead of falling back to a shared URL.
+- **Resending is a first-class action.** If the buyer lost the link, an operator presses "Lihat tautan" on
+  the order page. That calls `GET /api/admin/fulfillments/:id/minted-link`, decrypts the stored value on
+  the server and writes a `meterai.reveal` audit row naming the operator, the fulfilment and the mint time.
+  The link itself never enters the metadata of that row: it is the secret being revealed. Reading needs
+  only `claim:read`, because resending costs nothing at the supplier, unlike minting.
 - **Nothing leaks.** The order screen reports `hasMintedLink` and `mintedAt`, never the ciphertext; the
   settings endpoint reports `hasPassword`, never the password.
 

@@ -8,6 +8,7 @@ import { paginate, paginationSchema } from "./common.js";
 import {
   mintFulfillmentLink,
   reissueFulfillment,
+  revealMintedLink,
   revokeClaim,
 } from "@qansa/services";
 
@@ -118,6 +119,24 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const user = currentUser(request);
       const result = await mintFulfillmentLink(ctx.deps, {
+        fulfillmentId: request.params.id,
+        actor: { id: user.id, email: user.email },
+        ip: request.ip,
+      });
+      return { ok: true, ...result };
+    },
+  );
+
+  /**
+   * Show the minted link to an operator so they can resend it when the buyer lost it.
+   * Reading is audited: the link is worth money and belongs to one buyer.
+   */
+  app.get<{ Params: { id: string } }>(
+    "/api/admin/fulfillments/:id/minted-link",
+    { preHandler: read },
+    async (request) => {
+      const user = currentUser(request);
+      const result = await revealMintedLink(ctx.deps, {
         fulfillmentId: request.params.id,
         actor: { id: user.id, email: user.email },
         ip: request.ip,

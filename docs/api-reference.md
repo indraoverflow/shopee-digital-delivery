@@ -212,14 +212,15 @@ delivered yet (`ORDER_NOT_READY`, 409), and maps a channel that cannot be arrang
 
 ## Claims
 
-| Method | Path                                  | Permission    | Notes                                           |
-| ------ | ------------------------------------- | ------------- | ----------------------------------------------- |
-| GET    | `/api/admin/claims`                   | `claim:read`  | `status`, `query` (order number), `storeId`     |
-| GET    | `/api/admin/claims/:id`               | `claim:read`  | Claim, order, product, fulfilment, delivery log |
-| GET    | `/api/admin/fulfillments`             | `claim:read`  | Fulfilments by status                           |
-| POST   | `/api/admin/claims/:id/revoke`        | `claim:write` | `{ reason }`; kills issued links                |
-| POST   | `/api/admin/fulfillments/:id/reissue` | `claim:write` | `{ reason, extendDays? }`; back to `CLAIMABLE`  |
-| GET    | `/api/admin/claim-attempts`           | `claim:read`  | Verification attempts, `success` filter         |
+| Method | Path                                      | Permission    | Notes                                                                                          |
+| ------ | ----------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------- |
+| GET    | `/api/admin/claims`                       | `claim:read`  | `status`, `query` (order number), `storeId`                                                    |
+| GET    | `/api/admin/claims/:id`                   | `claim:read`  | Claim, order, product, fulfilment, delivery log                                                |
+| GET    | `/api/admin/fulfillments`                 | `claim:read`  | Fulfilments by status                                                                          |
+| POST   | `/api/admin/claims/:id/revoke`            | `claim:write` | `{ reason }`; kills issued links                                                               |
+| POST   | `/api/admin/fulfillments/:id/reissue`     | `claim:write` | `{ reason, extendDays? }`; back to `CLAIMABLE`                                                 |
+| GET    | `/api/admin/fulfillments/:id/minted-link` | `claim:read`  | Decrypted buyer link, `meterai.reveal` audit; 404 `METERAI_LINK_MISSING`, 422 if not e-Meterai |
+| GET    | `/api/admin/claim-attempts`               | `claim:read`  | Verification attempts, `success` filter                                                        |
 
 ## Operations
 

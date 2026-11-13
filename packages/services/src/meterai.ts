@@ -200,6 +200,68 @@ export async function mintMeteraiLink(
   return { url, quantity };
 }
 
+export interface RevealInput {
+  fulfillmentId: string;
+  actor: { id: string; email: string };
+  ip?: string | null;
+}
+
+/**
+ * Hand the minted link back to an operator, for the case where the buyer lost it.
+ *
+ * Reading it is an event worth recording: the link is worth money and opens a specific
+ * buyer's document, so every reveal leaves an audit row naming who looked.
+ */
+export async function revealMintedLink(
+  deps: ServiceDeps,
+  input: RevealInput,
+): Promise<{ url: string; mintedAt: string }> {
+  const [row] = await deps.db
+    .select({
+      fulfillment: schema.fulfillments,
+      product: schema.digitalProducts,
+    })
+    .from(schema.fulfillments)
+    .innerJoin(
+      schema.digitalProducts,
+      eq(schema.digitalProducts.id, schema.fulfillments.digitalProductId),
+    )
+    .where(eq(schema.fulfillments.id, input.fulfillmentId))
+    .limit(1);
+
+  if (!row) throw AppError.notFound("Fulfilment");
+  const { fulfillment, product } = row;
+
+  if (!product.meteraiEnabled)
+    throw AppError.validation("Produk ini bukan produk e-Meterai.");
+  if (!fulfillment.mintedSecretEnc || !fulfillment.mintedAt) {
+    throw new AppError(
+      "METERAI_LINK_MISSING",
+      "Tautan e-Meterai untuk pesanan ini belum dibuat.",
+      404,
+    );
+  }
+
+  const url = decryptSecret(
+    fulfillment.mintedSecretEnc,
+    deps.config.appEncryptionKey,
+  );
+
+  await recordAudit(deps, {
+    actorType: "ADMIN",
+    actorId: input.actor.id,
+    actorLabel: input.actor.email,
+    action: "meterai.reveal",
+    targetType: "fulfillment",
+    targetId: fulfillment.id,
+    // The link itself is not metadata: it is the secret being revealed.
+    metadata: { mintedAt: fulfillment.mintedAt.toISOString() },
+    ip: input.ip ?? null,
+  });
+
+  return { url, mintedAt: fulfillment.mintedAt.toISOString() };
+}
+
 export interface MintInput {
   fulfillmentId: string;
   actor: { id: string; email: string; system?: boolean };

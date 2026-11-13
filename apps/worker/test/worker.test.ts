@@ -197,6 +197,17 @@ describe("handlers", () => {
     expect(fulfillment!.status).toBe("CLAIMABLE");
   });
 
+  it("drains a sync job for a store that no longer exists instead of dead-lettering it", async () => {
+    const { context } = await setup();
+    const missing = "00000000-0000-4000-8000-000000000000";
+
+    const product = await handleJob(context, { id: "job-missing-p", type: "SYNC_PRODUCTS", payload: { storeId: missing } }, { workerId: "w" });
+    const orders = await handleJob(context, { id: "job-missing-o", type: "SYNC_ORDERS", payload: { storeId: missing } }, { workerId: "w" });
+
+    expect(product).toContain("no longer exists");
+    expect(orders).toContain("no longer exists");
+  });
+
   it("succeeds instead of retrying when Shopee no longer returns the order", async () => {
     const { context, storeId } = await setup();
     const detail = await handleJob(context, { id: "job-2", type: "PROCESS_ORDER", payload: { storeId, orderSn: "UNKNOWN" } }, { workerId: "w" });

@@ -202,12 +202,20 @@ export async function processOrderDetail(
       .where(and(eq(schema.orders.storeId, store.id), eq(schema.orders.orderSn, detail.orderSn)))
       .limit(1);
 
+    // A shipment the operator arranged must not be undone by a stale read. Shopee
+    // still reporting the order as unshipped after ship_order succeeded is a
+    // discrepancy worth seeing, not a reason to flip the order back.
+    const PRE_SHIPMENT = ["UNPAID", "READY_TO_SHIP", "PROCESSED"];
+    const regressedShipment =
+      existingOrder?.shopeeStatus === "SHIPPED" && PRE_SHIPMENT.includes(detail.status.toUpperCase());
+    const shopeeStatus = regressedShipment ? "SHIPPED" : detail.status;
+
     const orderValues = {
       storeId: store.id,
       orderSn: detail.orderSn,
       buyerUsername: detail.buyerUsername,
       buyerPhoneMasked: detail.buyerPhoneMasked,
-      shopeeStatus: detail.status,
+      shopeeStatus,
       totalAmount: detail.totalAmount,
       currency: detail.currency ?? "IDR",
       paymentMethod: detail.paymentMethod,
@@ -227,6 +235,13 @@ export async function processOrderDetail(
         .where(eq(schema.orders.id, existingOrder.id))
         .returning();
       order = updated!;
+      if (regressedShipment) {
+        await tx.insert(schema.orderEvents).values({
+          orderId: order.id,
+          type: "SHIP_STATUS_DISCREPANCY",
+          payload: { reported: detail.status, kept: "SHIPPED" },
+        });
+      }
     } else {
       const [created] = await tx
         .insert(schema.orders)

@@ -84,6 +84,7 @@ Symptom first, cause second, fix third.
 | Queue grows, nothing processes     | Worker not running, or database unreachable from the worker | `docker compose ps worker`, check its log                  |
 | Jobs stuck `RUNNING`               | Worker died mid-job                                         | Automatic: `recoverStuckJobs` requeues after 15 minutes    |
 | Same job retried forever           | A permanent error is being treated as transient             | Dead letter after `maxAttempts`; look at `last_error`      |
+| Dead letter says `Toko Shopee tidak ditemukan` | The store was deleted after its sync job was queued | Fixed: sync and order jobs drain with `store no longer exists` instead of retrying |
 | Reconcile runs every few minutes   | Normal schedule (`ORDER_RECONCILE_MINUTES`)                 | Raise it if it is noisy                                    |
 | Worker and API disagree about time | Container clocks                                            | Both use UTC from the host; check `date` in each container |
 

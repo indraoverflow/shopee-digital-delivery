@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Clock, HeartPulse, Inbox, ShieldAlert } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, HeartPulse, Inbox, ShieldAlert, Truck } from "lucide-react";
 import { useApi } from "@/lib/hooks";
 import { LoadingRows, SectionCard, StatCard, TableShell, Td, Th, Tr } from "@/components/admin/kit";
 import { Alert, Badge, Card, EmptyState, PageHeader, Skeleton } from "@/components/ui";
@@ -20,6 +20,11 @@ interface Monitoring {
   failedSyncs: Array<{ id: string; type: string; status: string; error: string | null; finishedAt: string | null; storeLabel: string }>;
   tokenHealth: Array<{ storeId: string; label: string; status: string; lastError: string | null; expiresAt: string | null; minutesLeft: number | null }>;
   unmapped: { items: number; listings: number };
+  shipping: {
+    awaitingShipment: number;
+    oldestHours: number;
+    sample: Array<{ orderSn: string; state: string; shopeeStatus: string | null; storeLabel: string; hours: number }>;
+  };
   attempts: Array<{ id: string; orderSn: string | null; success: boolean; reason: string | null; ip: string | null; createdAt: string }>;
   alerts: Array<{ level: "warning" | "critical"; code: string; message: string }>;
   gatewayMode: "live" | "fixture";
@@ -70,15 +75,22 @@ export default function MonitoringPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {loading || !data ? (
-          Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-[104px]" />)
+          Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-[104px]" />)
         ) : (
           <>
             <StatCard label="Webhook 24 jam" value={formatNumber(data.webhooks.total24h)} hint={`${data.webhooks.duplicates24h} duplikat diabaikan`} tone="brand" icon={<Inbox className="h-4 w-4" />} />
             <StatCard label="Antrean" value={formatNumber(data.queue.queued + data.queue.running)} hint={`${data.queue.succeeded24h} sukses / 24 jam`} tone="info" icon={<Clock className="h-4 w-4" />} />
             <StatCard label="Dead letter" value={formatNumber(data.queue.dead)} hint={data.queue.dead > 0 ? "Perlu diperiksa" : "Bersih"} tone={data.queue.dead > 0 ? "danger" : "success"} icon={<ShieldAlert className="h-4 w-4" />} />
             <StatCard label="Item tanpa mapping" value={formatNumber(data.unmapped.items)} hint={`${data.unmapped.listings} listing belum dipetakan`} tone={data.unmapped.items > 0 ? "warning" : "neutral"} icon={<AlertTriangle className="h-4 w-4" />} />
+            <StatCard
+              label="Belum ditandai dikirim"
+              value={formatNumber(data.shipping.awaitingShipment)}
+              hint={data.shipping.awaitingShipment > 0 ? `tertua ${data.shipping.oldestHours} jam` : "Bersih"}
+              tone={data.shipping.awaitingShipment > 0 ? "warning" : "success"}
+              icon={<Truck className="h-4 w-4" />}
+            />
           </>
         )}
       </div>

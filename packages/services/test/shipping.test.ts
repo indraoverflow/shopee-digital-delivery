@@ -67,6 +67,24 @@ describe("markShipped", () => {
     expect(events.filter((event) => event.type === "SHIP_CONFIRMED")).toHaveLength(1);
   });
 
+  it("keeps the operator's shipment when a later read still says unshipped", async () => {
+    const order = await claimableOrder();
+    await markShipped(h!.deps, { orderId: order.id, actor });
+
+    // A fresh gateway starts from the original fixture data, which still says
+    // READY_TO_SHIP, exactly like a stale or lagging read from Shopee.
+    const fixtures = await import("@qansa/shopee-adapter");
+    h!.deps.gateway = new fixtures.FixtureShopeeGateway([sampleStore()]);
+    await processOrder(h!.deps, h!.storeId, order.orderSn);
+
+    const [after] = await h!.db.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
+    expect(after!.shopeeStatus).toBe("SHIPPED");
+
+    const events = await h!.db.db.select().from(schema.orderEvents).where(eq(schema.orderEvents.orderId, order.id));
+    const discrepancy = events.find((event) => event.type === "SHIP_STATUS_DISCREPANCY");
+    expect(discrepancy?.payload).toMatchObject({ reported: "READY_TO_SHIP", kept: "SHIPPED" });
+  });
+
   it("refuses an order that was not delivered to the buyer yet", async () => {
     h = await harness([sampleStore()]);
     await runProductSync(h.deps, { storeId: h.storeId });

@@ -38,19 +38,26 @@ automating it is a decision about that service's terms, not only about code.
 answer with every token and cookie masked, reads the balance, and stops. It never calls generate-link,
 because that call can spend paid quota.
 
-Run on 2026-11-13:
+Run on 2026-11-13, three attempts total, the last one with the full browser header set
+(`Origin`, `Referer`, `Accept-Language`, a Chrome user agent):
 
 ```
 csrf     http 404  no token                       (/csrf not at the API root)
 login    http 500  {"statusCode":"09","message":"error","result":"Login Failed"}
+login    http 500  same, with browser headers
 ```
+
+No cookie is set by any of the three origins, so there is no CSRF value to fetch before the first
+login, which means the dashboard is not protecting its first call with one either.
 
 Two conclusions, stated plainly:
 
-1. The endpoint exists and answers in its own error format, so the request reached the right service.
-2. The login was refused. Either the stored password is stale, the account expects a different field or
-   an email OTP, or it is protected by something a script cannot satisfy (device check, captcha). The
-   probe stopped there rather than retrying: repeated failures risk locking a real account.
+1. The endpoint exists and answers in its own error format, so the request reached the right service and
+   the payload shape is not the problem.
+2. The login was refused three times, the last time with headers identical to a browser. What is left is
+   the credential itself, an extra step the dashboard performs (email OTP, device check), or an account
+   that is not enabled for anything but interactive use. The probe stops here: further attempts risk
+   locking a real account, and none of the remaining causes can be fixed by guessing.
 
 ## What closes it
 

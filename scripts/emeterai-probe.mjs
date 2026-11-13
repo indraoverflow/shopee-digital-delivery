@@ -100,10 +100,17 @@ async function main() {
     `csrf          http ${csrfResponse.status} ${csrfToken ? "token captured" : "no token"}`,
   );
 
+  // Everything a browser would send with that call. The Origin and Referer are the
+  // cheapest thing a server-side probe usually forgets, and the only difference
+  // worth one more attempt before asking the owner for a captured request.
   const headers = {
     "content-type": "application/json",
-    accept: "application/json",
+    accept: "application/json, text/plain, */*",
+    "accept-language": "id-ID,id;q=0.9,en;q=0.8",
     origin: "https://e-meterai.co.id",
+    referer: "https://e-meterai.co.id/",
+    "user-agent":
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     ...(csrfToken ? { "csrf-token": String(csrfToken) } : {}),
     ...(cookieHeader() ? { cookie: cookieHeader() } : {}),
   };

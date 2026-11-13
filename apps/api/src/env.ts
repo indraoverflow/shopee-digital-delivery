@@ -12,14 +12,22 @@ const booleanish = z
   .transform((value) => value === "true" || value === "1");
 
 const schema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  NODE_ENV: z
+    .enum(["development", "test", "production"])
+    .default("development"),
   PORT: z.coerce.number().int().positive().max(65535).default(4000),
   HOST: z.string().default("0.0.0.0"),
-  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  LOG_LEVEL: z
+    .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
+    .default("info"),
 
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  APP_ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, "APP_ENCRYPTION_KEY must be 64 hex characters"),
-  DOWNLOAD_SIGNING_SECRET: z.string().min(32, "DOWNLOAD_SIGNING_SECRET must be at least 32 characters"),
+  APP_ENCRYPTION_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, "APP_ENCRYPTION_KEY must be 64 hex characters"),
+  DOWNLOAD_SIGNING_SECRET: z
+    .string()
+    .min(32, "DOWNLOAD_SIGNING_SECRET must be at least 32 characters"),
   SESSION_COOKIE_SECURE: booleanish,
 
   ADMIN_ORIGIN: z.string().url().default("https://admin.qansa.web.id"),
@@ -37,10 +45,33 @@ const schema = z.object({
   SHOPEE_PUSH_URL: z.string().url().optional(),
   SHOPEE_PUSH_TEST_PARTNER_KEY: z.string().optional(),
   /** Where Shopee returns the seller after authorizing the app. */
-  SHOPEE_REDIRECT_URL: z.string().url().default("https://api.qansa.web.id/api/integration/shopee/callback"),
+  SHOPEE_REDIRECT_URL: z
+    .string()
+    .url()
+    .default("https://api.qansa.web.id/api/integration/shopee/callback"),
 
   UPLOAD_DIR: z.string().default("./data/uploads"),
   ORDER_LOOKBACK_HOURS: z.coerce.number().int().positive().default(72),
+
+  /** "local" keeps files on the private volume; "s3" moves them to object storage. */
+  ASSET_STORE: z.enum(["local", "s3"]).default("local"),
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_REGION: z.string().default("us-east-1"),
+  S3_BUCKET: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_FORCE_PATH_STYLE: booleanish.optional(),
+
+  /**
+   * Optional comma separated list of addresses or CIDR blocks allowed to call
+   * the console API. Empty means "no restriction", which is the default.
+   */
+  ADMIN_IP_ALLOWLIST: z.string().optional(),
+  /** Previous encryption key, set only while rotating. */
+  APP_ENCRYPTION_KEY_OLD: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/)
+    .optional(),
 });
 
 export interface ApiConfig {
@@ -63,6 +94,19 @@ export interface ApiConfig {
   pushTestPartnerKey?: string;
   redirectUrl: string;
   uploadDir: string;
+  adminIpAllowlist: string[];
+  assets: {
+    driver: "local" | "s3";
+    directory: string;
+    s3?: {
+      endpoint: string;
+      region: string;
+      bucket: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      forcePathStyle: boolean;
+    };
+  };
   service: ServiceConfig;
 }
 
@@ -74,7 +118,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       ? "https://partner.shopeemobile.com"
       : "https://openplatform.sandbox.test-stable.shopee.sg");
 
-  const origins = [parsed.ADMIN_ORIGIN, parsed.CLAIM_ORIGIN, ...(parsed.EXTRA_ORIGINS?.split(",").map((value) => value.trim()).filter(Boolean) ?? [])];
+  const origins = [
+    parsed.ADMIN_ORIGIN,
+    parsed.CLAIM_ORIGIN,
+    ...(parsed.EXTRA_ORIGINS?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean) ?? []),
+  ];
+
+  if (parsed.ASSET_STORE === "s3") {
+    const missing = (
+      [
+        "S3_ENDPOINT",
+        "S3_BUCKET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+      ] as const
+    ).filter((key) => !parsed[key]);
+    if (missing.length > 0) {
+      throw new Error(`ASSET_STORE=s3 requires ${missing.join(", ")}`);
+    }
+  }
 
   return {
     nodeEnv: parsed.NODE_ENV,
@@ -93,9 +157,31 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     partnerKey: parsed.SHOPEE_PARTNER_KEY,
     baseUrl,
     ...(parsed.SHOPEE_PUSH_URL ? { pushUrl: parsed.SHOPEE_PUSH_URL } : {}),
-    ...(parsed.SHOPEE_PUSH_TEST_PARTNER_KEY ? { pushTestPartnerKey: parsed.SHOPEE_PUSH_TEST_PARTNER_KEY } : {}),
+    ...(parsed.SHOPEE_PUSH_TEST_PARTNER_KEY
+      ? { pushTestPartnerKey: parsed.SHOPEE_PUSH_TEST_PARTNER_KEY }
+      : {}),
     redirectUrl: parsed.SHOPEE_REDIRECT_URL,
     uploadDir: parsed.UPLOAD_DIR,
+    adminIpAllowlist: (parsed.ADMIN_IP_ALLOWLIST ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+    assets: {
+      driver: parsed.ASSET_STORE,
+      directory: parsed.UPLOAD_DIR,
+      ...(parsed.ASSET_STORE === "s3"
+        ? {
+            s3: {
+              endpoint: parsed.S3_ENDPOINT!,
+              region: parsed.S3_REGION,
+              bucket: parsed.S3_BUCKET!,
+              accessKeyId: parsed.S3_ACCESS_KEY_ID!,
+              secretAccessKey: parsed.S3_SECRET_ACCESS_KEY!,
+              forcePathStyle: parsed.S3_FORCE_PATH_STYLE ?? true,
+            },
+          }
+        : {}),
+    },
     service: {
       appEncryptionKey: parsed.APP_ENCRYPTION_KEY,
       downloadSigningSecret: parsed.DOWNLOAD_SIGNING_SECRET,

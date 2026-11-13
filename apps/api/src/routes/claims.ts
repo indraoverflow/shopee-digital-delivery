@@ -20,7 +20,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/admin/claims", { preHandler: read }, async (request) => {
     const query = paginationSchema
       .extend({
-        status: z.enum(["ISSUED", "COMPLETED", "REVOKED", "EXPIRED", "BLOCKED"]).optional(),
+        status: z
+          .enum(["ISSUED", "COMPLETED", "REVOKED", "EXPIRED", "BLOCKED"])
+          .optional(),
         query: z.string().trim().max(120).optional(),
         storeId: z.string().uuid().optional(),
       })
@@ -28,8 +30,12 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
 
     const filters = [
       ...(query.status ? [eq(schema.claims.status, query.status)] : []),
-      ...(query.storeId ? [eq(schema.fulfillments.storeId, query.storeId)] : []),
-      ...(query.query ? [sql`${schema.orders.orderSn} ilike ${`%${query.query}%`}`] : []),
+      ...(query.storeId
+        ? [eq(schema.fulfillments.storeId, query.storeId)]
+        : []),
+      ...(query.query
+        ? [sql`${schema.orders.orderSn} ilike ${`%${query.query}%`}`]
+        : []),
     ];
     const where = filters.length ? and(...filters) : undefined;
 
@@ -45,9 +51,18 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       })
       .from(schema.claims)
       .innerJoin(schema.orders, eq(schema.orders.id, schema.claims.orderId))
-      .innerJoin(schema.digitalProducts, eq(schema.digitalProducts.id, schema.claims.digitalProductId))
-      .innerJoin(schema.fulfillments, eq(schema.fulfillments.id, schema.claims.fulfillmentId))
-      .innerJoin(schema.shopeeStores, eq(schema.shopeeStores.id, schema.fulfillments.storeId))
+      .innerJoin(
+        schema.digitalProducts,
+        eq(schema.digitalProducts.id, schema.claims.digitalProductId),
+      )
+      .innerJoin(
+        schema.fulfillments,
+        eq(schema.fulfillments.id, schema.claims.fulfillmentId),
+      )
+      .innerJoin(
+        schema.shopeeStores,
+        eq(schema.shopeeStores.id, schema.fulfillments.storeId),
+      )
       .where(where)
       .orderBy(desc(schema.claims.createdAt))
       .limit(query.pageSize)
@@ -57,7 +72,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       .select({ value: count() })
       .from(schema.claims)
       .innerJoin(schema.orders, eq(schema.orders.id, schema.claims.orderId))
-      .innerJoin(schema.fulfillments, eq(schema.fulfillments.id, schema.claims.fulfillmentId))
+      .innerJoin(
+        schema.fulfillments,
+        eq(schema.fulfillments.id, schema.claims.fulfillmentId),
+      )
       .where(where);
 
     return paginate(
@@ -89,14 +107,25 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/admin/fulfillments", { preHandler: read }, async (request) => {
     const query = paginationSchema
       .extend({
-        status: z.enum(["PENDING", "CLAIMABLE", "CLAIMED", "REVOKED", "EXPIRED", "FAILED"]).optional(),
+        status: z
+          .enum([
+            "PENDING",
+            "CLAIMABLE",
+            "CLAIMED",
+            "REVOKED",
+            "EXPIRED",
+            "FAILED",
+          ])
+          .optional(),
         storeId: z.string().uuid().optional(),
       })
       .parse(request.query);
 
     const filters = [
       ...(query.status ? [eq(schema.fulfillments.status, query.status)] : []),
-      ...(query.storeId ? [eq(schema.fulfillments.storeId, query.storeId)] : []),
+      ...(query.storeId
+        ? [eq(schema.fulfillments.storeId, query.storeId)]
+        : []),
     ];
     const where = filters.length ? and(...filters) : undefined;
 
@@ -108,16 +137,30 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         productName: schema.digitalProducts.name,
       })
       .from(schema.fulfillments)
-      .innerJoin(schema.orders, eq(schema.orders.id, schema.fulfillments.orderId))
-      .innerJoin(schema.digitalProducts, eq(schema.digitalProducts.id, schema.fulfillments.digitalProductId))
+      .innerJoin(
+        schema.orders,
+        eq(schema.orders.id, schema.fulfillments.orderId),
+      )
+      .innerJoin(
+        schema.digitalProducts,
+        eq(schema.digitalProducts.id, schema.fulfillments.digitalProductId),
+      )
       .where(where)
       .orderBy(desc(schema.fulfillments.createdAt))
       .limit(query.pageSize)
       .offset((query.page - 1) * query.pageSize);
 
-    const [total] = await ctx.db.select({ value: count() }).from(schema.fulfillments).where(where);
+    const [total] = await ctx.db
+      .select({ value: count() })
+      .from(schema.fulfillments)
+      .where(where);
     return paginate(
-      rows.map((row) => ({ ...row.fulfillment, orderSn: row.orderSn, buyerUsername: row.buyerUsername, productName: row.productName })),
+      rows.map((row) => ({
+        ...row.fulfillment,
+        orderSn: row.orderSn,
+        buyerUsername: row.buyerUsername,
+        productName: row.productName,
+      })),
       query.page,
       query.pageSize,
       Number(total?.value ?? 0),
@@ -128,9 +171,17 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     "/api/admin/claims/:id/revoke",
     { preHandler: write },
     async (request) => {
-      const body = z.object({ reason: z.string().trim().min(4).max(300) }).parse(request.body);
+      const body = z
+        .object({ reason: z.string().trim().min(4).max(300) })
+        .parse(request.body);
       const user = currentUser(request);
-      await revokeClaim(ctx.deps, { claimId: request.params.id, reason: body.reason, actorLabel: user.email, actorId: user.id, ip: request.ip });
+      await revokeClaim(ctx.deps, {
+        claimId: request.params.id,
+        reason: body.reason,
+        actorLabel: user.email,
+        actorId: user.id,
+        ip: request.ip,
+      });
       return { ok: true };
     },
   );
@@ -140,7 +191,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: write },
     async (request) => {
       const body = z
-        .object({ reason: z.string().trim().min(4).max(300), extendDays: z.coerce.number().int().min(1).max(90).default(7) })
+        .object({
+          reason: z.string().trim().min(4).max(300),
+          extendDays: z.coerce.number().int().min(1).max(90).default(7),
+        })
         .parse(request.body);
       const user = currentUser(request);
       await reissueFulfillment(ctx.deps, {
@@ -155,43 +209,92 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get("/api/admin/claim-attempts", { preHandler: read }, async (request) => {
-    const query = paginationSchema.extend({ orderSn: z.string().trim().max(64).optional(), success: z.enum(["true", "false"]).optional() }).parse(request.query);
-    const filters = [
-      ...(query.orderSn ? [eq(schema.claimAttempts.orderSn, query.orderSn)] : []),
-      ...(query.success ? [eq(schema.claimAttempts.success, query.success === "true")] : []),
-    ];
-    const where = filters.length ? and(...filters) : undefined;
+  app.get(
+    "/api/admin/claim-attempts",
+    { preHandler: read },
+    async (request) => {
+      const query = paginationSchema
+        .extend({
+          orderSn: z.string().trim().max(64).optional(),
+          success: z.enum(["true", "false"]).optional(),
+        })
+        .parse(request.query);
+      const filters = [
+        ...(query.orderSn
+          ? [eq(schema.claimAttempts.orderSn, query.orderSn)]
+          : []),
+        ...(query.success
+          ? [eq(schema.claimAttempts.success, query.success === "true")]
+          : []),
+      ];
+      const where = filters.length ? and(...filters) : undefined;
 
-    const rows = await ctx.db
-      .select()
-      .from(schema.claimAttempts)
-      .where(where)
-      .orderBy(desc(schema.claimAttempts.createdAt))
-      .limit(query.pageSize)
-      .offset((query.page - 1) * query.pageSize);
-    const [total] = await ctx.db.select({ value: count() }).from(schema.claimAttempts).where(where);
-    return paginate(rows, query.page, query.pageSize, Number(total?.value ?? 0));
-  });
+      const rows = await ctx.db
+        .select()
+        .from(schema.claimAttempts)
+        .where(where)
+        .orderBy(desc(schema.claimAttempts.createdAt))
+        .limit(query.pageSize)
+        .offset((query.page - 1) * query.pageSize);
+      const [total] = await ctx.db
+        .select({ value: count() })
+        .from(schema.claimAttempts)
+        .where(where);
+      return paginate(
+        rows,
+        query.page,
+        query.pageSize,
+        Number(total?.value ?? 0),
+      );
+    },
+  );
 
-  app.get<{ Params: { id: string } }>("/api/admin/claims/:id", { preHandler: read }, async (request) => {
-    const [row] = await ctx.db
-      .select({ claim: schema.claims, order: schema.orders, product: schema.digitalProducts, fulfillment: schema.fulfillments })
-      .from(schema.claims)
-      .innerJoin(schema.orders, eq(schema.orders.id, schema.claims.orderId))
-      .innerJoin(schema.digitalProducts, eq(schema.digitalProducts.id, schema.claims.digitalProductId))
-      .innerJoin(schema.fulfillments, eq(schema.fulfillments.id, schema.claims.fulfillmentId))
-      .where(eq(schema.claims.id, request.params.id))
-      .limit(1);
-    if (!row) throw AppError.notFound("Klaim");
+  app.get<{ Params: { id: string } }>(
+    "/api/admin/claims/:id",
+    { preHandler: read },
+    async (request) => {
+      const [row] = await ctx.db
+        .select({
+          claim: schema.claims,
+          order: schema.orders,
+          product: schema.digitalProducts,
+          fulfillment: schema.fulfillments,
+        })
+        .from(schema.claims)
+        .innerJoin(schema.orders, eq(schema.orders.id, schema.claims.orderId))
+        .innerJoin(
+          schema.digitalProducts,
+          eq(schema.digitalProducts.id, schema.claims.digitalProductId),
+        )
+        .innerJoin(
+          schema.fulfillments,
+          eq(schema.fulfillments.id, schema.claims.fulfillmentId),
+        )
+        .where(eq(schema.claims.id, request.params.id))
+        .limit(1);
+      if (!row) throw AppError.notFound("Klaim");
 
-    const logs = await ctx.db.select().from(schema.deliveryLogs).where(eq(schema.deliveryLogs.claimId, row.claim.id)).orderBy(desc(schema.deliveryLogs.createdAt));
-    return {
-      claim: row.claim,
-      order: { id: row.order.id, orderSn: row.order.orderSn, state: row.order.state, buyerUsername: row.order.buyerUsername },
-      product: { id: row.product.id, name: row.product.name, deliveryKind: row.product.deliveryKind },
-      fulfillment: row.fulfillment,
-      deliveries: logs,
-    };
-  });
+      const logs = await ctx.db
+        .select()
+        .from(schema.deliveryLogs)
+        .where(eq(schema.deliveryLogs.claimId, row.claim.id))
+        .orderBy(desc(schema.deliveryLogs.createdAt));
+      return {
+        claim: row.claim,
+        order: {
+          id: row.order.id,
+          orderSn: row.order.orderSn,
+          state: row.order.state,
+          buyerUsername: row.order.buyerUsername,
+        },
+        product: {
+          id: row.product.id,
+          name: row.product.name,
+          deliveryKind: row.product.deliveryKind,
+        },
+        fulfillment: row.fulfillment,
+        deliveries: logs,
+      };
+    },
+  );
 }

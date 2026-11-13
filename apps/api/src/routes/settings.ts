@@ -31,6 +31,17 @@ const settingsSchema = z.object({
       maxAttemptsPerOrder: z.coerce.number().int().min(1).max(200),
       downloadTtlMinutes: z.coerce.number().int().min(1).max(120),
       maxDownloadsPerFulfillment: z.coerce.number().int().min(1).max(100),
+      manualRequestDays: z.coerce.number().int().min(1).max(60),
+      manualApprovalHours: z.coerce.number().int().min(1).max(168),
+    })
+    .partial()
+    .optional(),
+  notify: z
+    .object({
+      enabled: z.boolean(),
+      webhookUrl: z.string().trim().url().max(500).nullable(),
+      secret: z.string().trim().max(200).nullable(),
+      events: z.array(z.string().trim().max(60)).max(20),
     })
     .partial()
     .optional(),
@@ -52,14 +63,19 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/api/admin/settings", { preHandler: read }, async () => {
     const settings = await loadSettings(ctx.deps);
-    return { settings, defaults: DEFAULT_SETTINGS, gatewayMode: ctx.config.gatewayMode, environment: ctx.config.nodeEnv };
+    return {
+      settings,
+      defaults: DEFAULT_SETTINGS,
+      gatewayMode: ctx.config.gatewayMode,
+      environment: ctx.config.nodeEnv,
+    };
   });
 
   app.patch("/api/admin/settings", { preHandler: write }, async (request) => {
     const body = settingsSchema.parse(request.body);
     const user = currentUser(request);
 
-    for (const key of ["branding", "claim", "sync"] as const) {
+    for (const key of ["branding", "claim", "sync", "notify"] as const) {
       const group = body[key];
       if (!group) continue;
       const current = await loadSettings(ctx.deps);
@@ -79,25 +95,45 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     return { settings: await loadSettings(ctx.deps) };
   });
 
-  app.get("/api/admin/audit-logs", { preHandler: auditRead }, async (request) => {
-    const query = paginationSchema
-      .extend({ action: z.string().trim().max(80).optional(), actorId: z.string().uuid().optional() })
-      .parse(request.query);
-    const filters = [
-      ...(query.action ? [eq(schema.auditLogs.action, query.action)] : []),
-      ...(query.actorId ? [eq(schema.auditLogs.actorId, query.actorId)] : []),
-    ];
-    const where = filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : undefined;
+  app.get(
+    "/api/admin/audit-logs",
+    { preHandler: auditRead },
+    async (request) => {
+      const query = paginationSchema
+        .extend({
+          action: z.string().trim().max(80).optional(),
+          actorId: z.string().uuid().optional(),
+        })
+        .parse(request.query);
+      const filters = [
+        ...(query.action ? [eq(schema.auditLogs.action, query.action)] : []),
+        ...(query.actorId ? [eq(schema.auditLogs.actorId, query.actorId)] : []),
+      ];
+      const where =
+        filters.length === 0
+          ? undefined
+          : filters.length === 1
+            ? filters[0]
+            : undefined;
 
-    const rows = await ctx.db
-      .select()
-      .from(schema.auditLogs)
-      .where(where)
-      .orderBy(desc(schema.auditLogs.createdAt))
-      .limit(query.pageSize)
-      .offset((query.page - 1) * query.pageSize);
-    const [total] = await ctx.db.select({ value: count() }).from(schema.auditLogs).where(where);
+      const rows = await ctx.db
+        .select()
+        .from(schema.auditLogs)
+        .where(where)
+        .orderBy(desc(schema.auditLogs.createdAt))
+        .limit(query.pageSize)
+        .offset((query.page - 1) * query.pageSize);
+      const [total] = await ctx.db
+        .select({ value: count() })
+        .from(schema.auditLogs)
+        .where(where);
 
-    return paginate(rows, query.page, query.pageSize, Number(total?.value ?? 0));
-  });
+      return paginate(
+        rows,
+        query.page,
+        query.pageSize,
+        Number(total?.value ?? 0),
+      );
+    },
+  );
 }

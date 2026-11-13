@@ -7,10 +7,11 @@ import rateLimit from "@fastify/rate-limit";
 import { AppError } from "@qansa/core";
 import { schema, type Database } from "@qansa/db";
 import {
-  LocalAssetStore,
+  createAssetStore,
   loadSettings,
   recordAudit,
   type AllSettings,
+  type AssetStore,
   type AuditInput,
   type Logger,
   type ServiceDeps,
@@ -19,6 +20,7 @@ import type { ShopeeGateway } from "@qansa/shopee-adapter";
 import { sql } from "drizzle-orm";
 import { ZodError } from "zod";
 import type { ApiConfig } from "./env.js";
+import { ipAllowed } from "@qansa/core";
 import { requireCsrf, requirePermission, type AuthUser } from "./auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { catalogRoutes } from "./routes/catalog.js";
@@ -28,6 +30,9 @@ import { orderRoutes } from "./routes/orders.js";
 import { overviewRoutes } from "./routes/overview.js";
 import { publicRoutes } from "./routes/public.js";
 import { settingsRoutes } from "./routes/settings.js";
+import { claimRequestRoutes } from "./routes/claim-requests.js";
+import { securityRoutes } from "./routes/security.js";
+import { userRoutes } from "./routes/users.js";
 import { storeRoutes } from "./routes/stores.js";
 import { webhookRoutes } from "./routes/webhook.js";
 
@@ -36,18 +41,23 @@ export interface AppContext {
   sql: typeof sql;
   deps: ServiceDeps;
   config: ApiConfig;
-  assets: LocalAssetStore;
+  assets: AssetStore;
   logger: Logger;
   gateway: ShopeeGateway;
   settings: () => Promise<AllSettings>;
   audit: (input: AuditInput) => Promise<void>;
-  requirePermissionFor: (request: unknown, permission: Parameters<typeof requirePermission>[1]) => Promise<void>;
+  requirePermissionFor: (
+    request: unknown,
+    permission: Parameters<typeof requirePermission>[1],
+  ) => Promise<void>;
 }
 
 declare module "fastify" {
   interface FastifyInstance {
     ctx: AppContext;
-    logger: Logger & { error: (context: Record<string, unknown>, message: string) => void };
+    logger: Logger & {
+      error: (context: Record<string, unknown>, message: string) => void;
+    };
   }
   interface FastifyRequest {
     user?: AuthUser;
@@ -69,8 +79,14 @@ export interface BuildAppOptions {
  * gate and the route modules. Tests build the same app against pglite, so what
  * is exercised in CI is the code that ships.
  */
-export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
-  const quiet: Logger = { info: () => undefined, warn: () => undefined, error: () => undefined };
+export async function buildApp(
+  options: BuildAppOptions,
+): Promise<FastifyInstance> {
+  const quiet: Logger = {
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+  };
   const logger = options.logger ?? quiet;
 
   const app = Fastify({
@@ -79,7 +95,11 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
         ? false
         : {
             level: options.config.logLevel,
-            redact: ["req.headers.authorization", "req.headers.cookie", "res.headers['set-cookie']"],
+            redact: [
+              "req.headers.authorization",
+              "req.headers.cookie",
+              "res.headers['set-cookie']",
+            ],
           },
     trustProxy: true,
     bodyLimit: 2 * 1024 * 1024,
@@ -94,7 +114,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     ...(options.now ? { now: options.now } : {}),
   };
 
-  const assets = new LocalAssetStore(options.config.uploadDir);
+  const assets = createAssetStore(options.config.assets);
 
   app.decorate("ctx", {
     db: options.db,
@@ -129,28 +149,67 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       if (options.config.origins.includes(origin)) return callback(null, true);
-      if (options.config.nodeEnv !== "production" && localOrigin.test(origin)) return callback(null, true);
-      return callback(new AppError("CORS_BLOCKED", "Origin tidak diizinkan", 403), false);
+      if (options.config.nodeEnv !== "production" && localOrigin.test(origin))
+        return callback(null, true);
+      return callback(
+        new AppError("CORS_BLOCKED", "Origin tidak diizinkan", 403),
+        false,
+      );
     },
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["content-type", "x-csrf-token", "authorization"],
   });
-  await app.register(rateLimit, { max: 240, timeWindow: "1 minute", allowList: [] });
-  await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024, files: 1 } });
+  await app.register(rateLimit, {
+    max: 240,
+    timeWindow: "1 minute",
+    allowList: [],
+  });
+  await app.register(multipart, {
+    limits: { fileSize: 50 * 1024 * 1024, files: 1 },
+  });
 
   /**
    * Keep the raw bytes of every JSON body: the push signature is computed over
    * them, and re-serialising the parsed object breaks it.
    */
-  app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
-    const buffer = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
-    request.rawBody = buffer;
-    if (buffer.length === 0) return done(null, undefined);
-    try {
-      done(null, JSON.parse(buffer.toString("utf8")));
-    } catch {
-      done(new AppError("INVALID_JSON", "Body bukan JSON yang valid", 400), undefined);
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "buffer" },
+    (request, body, done) => {
+      const buffer = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
+      request.rawBody = buffer;
+      if (buffer.length === 0) return done(null, undefined);
+      try {
+        done(null, JSON.parse(buffer.toString("utf8")));
+      } catch {
+        done(
+          new AppError("INVALID_JSON", "Body bukan JSON yang valid", 400),
+          undefined,
+        );
+      }
+    },
+  );
+
+  /**
+   * Optional allow list for the console API. An empty list means no fence, which
+   * keeps local development and the fixture demo working unchanged; the Shopee
+   * push endpoint and the public claim routes never pass through it, because
+   * their callers are Shopee and buyers, not operators.
+   */
+  const allowlist = options.config.adminIpAllowlist;
+  app.addHook("onRequest", async (request) => {
+    if (allowlist.length === 0) return;
+    const path = request.url.split("?")[0] ?? request.url;
+    if (path === "/health" || path.startsWith("/api/integration/shopee/push"))
+      return;
+    if (!path.startsWith("/api/")) return;
+    if (!ipAllowed(request.ip, allowlist)) {
+      throw new AppError(
+        "IP_NOT_ALLOWED",
+        "Alamat IP Anda tidak diizinkan membuka konsol",
+        403,
+      );
     }
   });
 
@@ -164,33 +223,70 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
-      return reply.code(error.status).send({ error: { code: error.code, message: error.message, details: error.details ?? undefined } });
+      return reply.code(error.status).send({
+        error: {
+          code: error.code,
+          message: error.message,
+          details: error.details ?? undefined,
+        },
+      });
     }
     if (error instanceof ZodError) {
       return reply.code(422).send({
         error: {
           code: "VALIDATION_ERROR",
           message: "Data yang dikirim tidak valid",
-          details: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+          details: error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
         },
       });
     }
     if ((error as { statusCode?: number }).statusCode === 429) {
-      return reply.code(429).send({ error: { code: "RATE_LIMITED", message: "Terlalu banyak permintaan. Coba lagi sebentar." } });
+      return reply.code(429).send({
+        error: {
+          code: "RATE_LIMITED",
+          message: "Terlalu banyak permintaan. Coba lagi sebentar.",
+        },
+      });
     }
-    if ((error as { statusCode?: number }).statusCode && (error as { statusCode: number }).statusCode < 500) {
-      return reply
-        .code((error as { statusCode: number }).statusCode)
-        .send({ error: { code: "REQUEST_INVALID", message: error instanceof Error ? error.message : "Permintaan tidak valid" } });
+    if (
+      (error as { statusCode?: number }).statusCode &&
+      (error as { statusCode: number }).statusCode < 500
+    ) {
+      return reply.code((error as { statusCode: number }).statusCode).send({
+        error: {
+          code: "REQUEST_INVALID",
+          message:
+            error instanceof Error ? error.message : "Permintaan tidak valid",
+        },
+      });
     }
 
     request.log.error({ err: error }, "unhandled error");
-    logger.error({ err: error instanceof Error ? error.message : String(error), url: request.url }, "unhandled error");
-    return reply.code(500).send({ error: { code: "INTERNAL_ERROR", message: "Terjadi kesalahan pada server" } });
+    logger.error(
+      {
+        err: error instanceof Error ? error.message : String(error),
+        url: request.url,
+      },
+      "unhandled error",
+    );
+    return reply.code(500).send({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "Terjadi kesalahan pada server",
+      },
+    });
   });
 
   app.setNotFoundHandler((request, reply) => {
-    reply.code(404).send({ error: { code: "NOT_FOUND", message: `Rute ${request.method} ${request.url} tidak ditemukan` } });
+    reply.code(404).send({
+      error: {
+        code: "NOT_FOUND",
+        message: `Rute ${request.method} ${request.url} tidak ditemukan`,
+      },
+    });
   });
 
   await app.register(publicRoutes);
@@ -203,11 +299,17 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(claimRoutes);
   await app.register(overviewRoutes);
   await app.register(settingsRoutes);
+  await app.register(userRoutes);
+  await app.register(claimRequestRoutes);
+  await app.register(securityRoutes);
 
   // One last check that the schema this API expects is actually the one the
   // database has: a missing migration should fail loudly at boot.
   try {
-    await options.db.select({ id: schema.users.id }).from(schema.users).limit(1);
+    await options.db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .limit(1);
   } catch (error) {
     throw new Error(
       `database schema mismatch (did the migrations run?): ${error instanceof Error ? error.message : String(error)}`,

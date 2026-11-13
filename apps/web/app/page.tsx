@@ -33,18 +33,22 @@ export default async function ClaimPortalPage() {
       <div className="relative mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-10">
         <header className="mb-10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700 text-[15px] font-semibold text-white">Q</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700 text-[15px] font-semibold text-white">
+              {(config?.branding.brandName ?? "Serah").slice(0, 1).toUpperCase()}
+            </span>
             <div className="leading-tight">
-              <p className="text-[14px] font-semibold text-ink-950">{config?.branding.brandName ?? "Qansa"}</p>
-              <p className="text-[11.5px] text-ink-400">{config?.branding.claimDomain ?? "claim.qansa.web.id"}</p>
+              <p className="text-[14px] font-semibold text-ink-950">{config?.branding.brandName ?? "Serah Terima"}</p>
+              <p className="text-[11.5px] text-ink-400">{config?.branding.claimDomain ?? "claim.example.com"}</p>
             </div>
           </div>
-          <a
-            href={`mailto:${config?.branding.supportEmail ?? "support@qansa.web.id"}`}
-            className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-ink-600 ring-1 ring-inset ring-line transition-colors hover:bg-surface"
-          >
-            Dukungan
-          </a>
+          {config?.branding.supportEmail ? (
+            <a
+              href={`mailto:${config.branding.supportEmail}`}
+              className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-ink-600 ring-1 ring-inset ring-line transition-colors hover:bg-surface"
+            >
+              Dukungan
+            </a>
+          ) : null}
         </header>
 
         <div className="flex flex-1 items-start justify-center pb-10 sm:items-center">

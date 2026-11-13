@@ -3,11 +3,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Qansa Digital Delivery",
-    template: "%s · Qansa",
+    default: "Serah Terima",
+    template: "%s · Serah Terima",
   },
   description:
-    "Klaim produk digital dari pesanan Shopee Anda dengan cepat dan aman. Portal klaim dan konsol operasional Qansa.",
+    "Klaim produk digital dari pesanan Shopee Anda dengan cepat dan aman.",
   robots: { index: false, follow: false },
 };
 

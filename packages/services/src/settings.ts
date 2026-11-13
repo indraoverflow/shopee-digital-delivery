@@ -89,11 +89,13 @@ export interface AllSettings {
 
 export const DEFAULT_SETTINGS: AllSettings = {
   branding: {
-    brandName: "Qansa",
+    // The platform is not sold as a service yet, so the default carries the product name
+    // only. A shop that connects its own domain overrides this in settings.
+    brandName: "Serah Terima",
     tagline: "Klaim produk digital Anda dalam hitungan detik",
-    supportEmail: "support@qansa.web.id",
+    supportEmail: "",
     supportWhatsapp: "+62 853-7050-2250",
-    claimDomain: "claim.qansa.web.id",
+    claimDomain: "claim.example.com",
   },
   claim: {
     sessionMinutes: 30,

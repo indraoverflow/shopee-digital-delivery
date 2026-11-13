@@ -118,7 +118,7 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
   const [manualMessage, setManualMessage] = useState<string | null>(null);
 
   const branding = config?.branding;
-  const brandName = branding?.brandName ?? "Qansa";
+  const brandName = branding?.brandName ?? "Serah Terima";
 
   const loadSession = useCallback(async () => {
     try {
@@ -373,7 +373,7 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                     <form onSubmit={requestManualReview} className="space-y-3">
                       <p className="text-[12.5px] leading-relaxed text-ink-600">
                         Tuliskan kontak yang bisa kami hubungi untuk mencocokkan
-                        pesanan Anda. Tim Qansa memeriksa manual, biasanya di
+                        pesanan Anda. Tim kami memeriksa manual, biasanya di
                         hari yang sama.
                       </p>
                       <input
@@ -856,20 +856,23 @@ function DeliveryView({
 }
 
 function SupportBlock({ branding }: { branding?: PublicConfig["branding"] }) {
-  const email = branding?.supportEmail ?? "support@qansa.web.id";
-  const whatsapp = branding?.supportWhatsapp ?? "";
+  // No invented address: if the shop has not set one, the mail link is simply not offered.
+  const email = branding?.supportEmail?.trim() ?? "";
+  const whatsapp = branding?.supportWhatsapp?.trim() ?? "";
 
   return (
     <div className="mt-5 flex flex-col items-center justify-center gap-2 text-[12px] text-ink-400 sm:flex-row sm:gap-4">
       <span className="inline-flex items-center gap-1.5">
         <LifeBuoy className="h-3.5 w-3.5" /> Butuh bantuan?
       </span>
-      <a
-        href={`mailto:${email}`}
-        className="text-ink-600 underline decoration-line underline-offset-2 hover:text-ink-950"
-      >
-        {email}
-      </a>
+      {email ? (
+        <a
+          href={`mailto:${email}`}
+          className="text-ink-600 underline decoration-line underline-offset-2 hover:text-ink-950"
+        >
+          {email}
+        </a>
+      ) : null}
       {whatsapp ? (
         <a
           href={`https://wa.me/${whatsapp.replace(/[^0-9]/g, "")}`}

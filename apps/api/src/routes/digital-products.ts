@@ -16,7 +16,14 @@ import { paginate, paginationSchema } from "./common.js";
 const productSchema = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(2000).optional(),
-  deliveryKind: z.enum(["FILE", "LINK", "CODE", "CREDENTIALS", "INSTRUCTIONS"]),
+  deliveryKind: z.enum([
+    "DRIVE",
+    "FILE",
+    "LINK",
+    "CODE",
+    "CREDENTIALS",
+    "INSTRUCTIONS",
+  ]),
   instructions: z.string().trim().max(4000).optional(),
   externalUrl: z.string().url().max(500).optional(),
   status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).default("DRAFT"),
@@ -36,7 +43,7 @@ const updateSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   deliveryKind: z
-    .enum(["FILE", "LINK", "CODE", "CREDENTIALS", "INSTRUCTIONS"])
+    .enum(["DRIVE", "FILE", "LINK", "CODE", "CREDENTIALS", "INSTRUCTIONS"])
     .optional(),
   instructions: z.string().trim().max(4000).nullable().optional(),
   externalUrl: z.string().url().max(500).nullable().optional(),

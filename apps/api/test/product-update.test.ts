@@ -45,6 +45,20 @@ async function createProduct() {
   return response.json().product as { id: string };
 }
 
+describe("POST /api/admin/digital-products", () => {
+  it("accepts the DRIVE delivery kind the database already has", async () => {
+    const response = await asOwner("POST", "/api/admin/digital-products", {
+      name: "Template Notion Drive",
+      deliveryKind: "DRIVE",
+      status: "DRAFT",
+      externalUrl: "https://drive.google.com/file/d/FILEID_abc123456/view",
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json().product.deliveryKind).toBe("DRIVE");
+  });
+});
+
 describe("PATCH /api/admin/digital-products/:id", () => {
   it("keeps status and the e-Meterai flag when only the name changes", async () => {
     const product = await createProduct();

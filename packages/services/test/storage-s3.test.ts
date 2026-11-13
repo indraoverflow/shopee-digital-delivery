@@ -92,18 +92,29 @@ async function fakeS3(): Promise<FakeS3> {
       const payloadHash = createHash("sha256").update(body).digest("hex");
 
       const authorization = String(request.headers.authorization ?? "");
-      const match = authorization.match(
-        /Credential=([^/]+)\/(\d{8})\/([^/]+)\/s3\/aws4_request, SignedHeaders=([^,]+), Signature=([0-9a-f]{64})/,
-      );
+      // Split, do not match: a permissive regex over an attacker-shaped header is the
+      // kind of thing a linter is right to complain about, and this is a test double.
+      const field = (name: string) =>
+        authorization.split(`${name}=`)[1]?.split(",")[0] ?? "";
+      const [accessKey, signatureDate, region, service, terminator] =
+        field("Credential").split("/");
+      const signedHeaders = field("SignedHeaders");
+      const signature = field("Signature");
       const amzDate = String(request.headers["x-amz-date"] ?? "");
       const valid =
-        Boolean(match) &&
-        match![5] ===
+        Boolean(accessKey) &&
+        signatureDate?.length === 8 &&
+        region === "us-east-1" &&
+        service === "s3" &&
+        terminator === "aws4_request" &&
+        signedHeaders.length > 0 &&
+        /^[0-9a-f]{64}$/.test(signature) &&
+        signature ===
           expectedSignature(
             request,
             url.pathname,
             String(request.headers["x-amz-content-sha256"] ?? payloadHash),
-            match![2]!,
+            signatureDate,
             amzDate,
           );
 

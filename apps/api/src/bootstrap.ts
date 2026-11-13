@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { createDatabase, runMigrations } from "@qansa/db";
 import { seed } from "@qansa/db/seed";
 import { loadConfig } from "./env.js";
@@ -25,11 +26,22 @@ if (adminEmail) {
     databaseUrl: config.databaseUrl,
     adminEmail,
     adminName: process.env.ADMIN_NAME ?? "Qansa Admin",
-    ...(process.env.ADMIN_PASSWORD ? { adminPassword: process.env.ADMIN_PASSWORD } : {}),
+    ...(process.env.ADMIN_PASSWORD
+      ? { adminPassword: process.env.ADMIN_PASSWORD }
+      : {}),
   });
-  console.log(`owner ${result.ownerEmail}: ${result.created ? "created" : "already present"}`);
+  console.log(
+    `owner ${result.ownerEmail}: ${result.created ? "created" : "already present"}`,
+  );
   if (result.generatedPassword) {
-    console.log(`generated password (shown once): ${result.generatedPassword}`);
+    // Never into container logs: a log shipper turns it into a permanent secret leak.
+    // Write it with 0600 and say where, so the operator can read it once and delete it.
+    const file =
+      process.env.ADMIN_PASSWORD_FILE ?? "/tmp/qansa-admin-password.txt";
+    await writeFile(file, `${result.generatedPassword}\n`, { mode: 0o600 });
+    console.log(
+      `generated password written to ${file} (mode 600). Read it, then delete the file.`,
+    );
   }
 } else {
   console.log("ADMIN_EMAIL not set: skipping seed");

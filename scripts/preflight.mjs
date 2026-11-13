@@ -18,7 +18,8 @@
 const API = (process.env.API_URL ?? "http://127.0.0.1:4000").replace(/\/$/, "");
 const EMAIL = process.env.ADMIN_EMAIL ?? "admin@qansa.web.id";
 const PASSWORD = process.env.ADMIN_PASSWORD ?? "";
-const PUBLIC_MODE = process.argv.includes("--public") || API.startsWith("https://");
+const PUBLIC_MODE =
+  process.argv.includes("--public") || API.startsWith("https://");
 
 const cookies = new Map();
 const results = [];
@@ -29,10 +30,39 @@ const green = (text) => `\u001b[32m${text}\u001b[0m`;
 const red = (text) => `\u001b[31m${text}\u001b[0m`;
 const amber = (text) => `\u001b[33m${text}\u001b[0m`;
 
+/**
+ * A probe prints what it found, and some of what it finds is a token, a cookie or a
+ * signature. Anything long and opaque is masked before it reaches the terminal or a log
+ * file, so a pasted transcript is safe.
+ */
+function scrub(detail) {
+  if (detail === undefined) return "";
+  const text = typeof detail === "string" ? detail : JSON.stringify(detail);
+  return text
+    .replace(
+      /\b[0-9a-f]{32,}\b/gi,
+      (match) => `${match.slice(0, 6)}***${match.slice(-4)}`,
+    )
+    .replace(
+      /\b[A-Za-z0-9+/_-]{40,}={0,2}/g,
+      (match) => `${match.slice(0, 6)}***${match.slice(-4)}`,
+    )
+    .replace(
+      /((?:token|password|secret|cookie|authorization)"?\s*[:=]\s*"?)[^",\s}]+/gi,
+      "$1***",
+    );
+}
+
 function record(level, label, detail) {
-  results.push({ level, label, detail });
-  const mark = level === "ok" ? green("ok  ") : level === "warn" ? amber("warn") : red("FAIL");
-  console.log(`  ${mark} ${label}${detail === undefined ? "" : ` — ${typeof detail === "string" ? detail : JSON.stringify(detail)}`}`);
+  const safe = scrub(detail);
+  results.push({ level, label, detail: safe });
+  const mark =
+    level === "ok"
+      ? green("ok  ")
+      : level === "warn"
+        ? amber("warn")
+        : red("FAIL");
+  console.log(`  ${mark} ${label}${safe === "" ? "" : ` — ${safe}`}`);
 }
 
 const ok = (label, detail) => record("ok", label, detail);
@@ -40,14 +70,17 @@ const warn = (label, detail) => record("warn", label, detail);
 const fail = (label, detail) => record("fail", label, detail);
 
 function cookieHeader() {
-  return [...cookies.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
+  return [...cookies.entries()]
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
 }
 
 function absorb(response) {
   for (const entry of response.headers.getSetCookie?.() ?? []) {
     const [pair] = entry.split(";");
     const [name, ...rest] = pair.split("=");
-    if (name && rest.length > 0) cookies.set(name.trim(), rest.join("=").trim());
+    if (name && rest.length > 0)
+      cookies.set(name.trim(), rest.join("=").trim());
   }
 }
 
@@ -83,15 +116,29 @@ function checkEnvironment() {
   const env = process.env;
 
   const key = env.APP_ENCRYPTION_KEY ?? "";
-  if (/^[0-9a-fA-F]{64}$/.test(key)) ok("APP_ENCRYPTION_KEY", "64 hex characters");
-  else fail("APP_ENCRYPTION_KEY", `expected 64 hex characters, got ${key.length} characters`);
+  if (/^[0-9a-fA-F]{64}$/.test(key))
+    ok("APP_ENCRYPTION_KEY", "64 hex characters");
+  else
+    fail(
+      "APP_ENCRYPTION_KEY",
+      `expected 64 hex characters, got ${key.length} characters`,
+    );
 
   const secret = env.DOWNLOAD_SIGNING_SECRET ?? "";
-  if (secret.length >= 32) ok("DOWNLOAD_SIGNING_SECRET", `${secret.length} characters`);
-  else fail("DOWNLOAD_SIGNING_SECRET", `at least 32 characters, got ${secret.length}`);
+  if (secret.length >= 32)
+    ok("DOWNLOAD_SIGNING_SECRET", `${secret.length} characters`);
+  else
+    fail(
+      "DOWNLOAD_SIGNING_SECRET",
+      `at least 32 characters, got ${secret.length}`,
+    );
 
   if (env.NODE_ENV === "production") ok("NODE_ENV", "production");
-  else warn("NODE_ENV", `${env.NODE_ENV ?? "unset"}: secure cookies and strict CORS behave differently`);
+  else
+    warn(
+      "NODE_ENV",
+      `${env.NODE_ENV ?? "unset"}: secure cookies and strict CORS behave differently`,
+    );
 
   if (env.SESSION_COOKIE_SECURE === "true") ok("SESSION_COOKIE_SECURE", "true");
   else warn("SESSION_COOKIE_SECURE", "false: only acceptable over plain HTTP");
@@ -99,16 +146,25 @@ function checkEnvironment() {
   for (const name of ["ADMIN_ORIGIN", "CLAIM_ORIGIN", "API_PUBLIC_ORIGIN"]) {
     const value = env[name] ?? "";
     if (value.startsWith("https://")) ok(name, value);
-    else if (env.NODE_ENV === "production") fail(name, `${value || "unset"} must be https in production`);
+    else if (env.NODE_ENV === "production")
+      fail(name, `${value || "unset"} must be https in production`);
     else warn(name, value || "unset");
   }
 
   const pushUrl = env.SHOPEE_PUSH_URL ?? "";
   if (!pushUrl) {
-    if (env.SHOPEE_GATEWAY_MODE === "live") fail("SHOPEE_PUSH_URL", "required in live mode: pushes would be refused");
-    else warn("SHOPEE_PUSH_URL", "unset: pushes are accepted unverified outside production");
+    if (env.SHOPEE_GATEWAY_MODE === "live")
+      fail("SHOPEE_PUSH_URL", "required in live mode: pushes would be refused");
+    else
+      warn(
+        "SHOPEE_PUSH_URL",
+        "unset: pushes are accepted unverified outside production",
+      );
   } else if (!pushUrl.startsWith("https://")) {
-    fail("SHOPEE_PUSH_URL", "must be the https URL registered in the Shopee console");
+    fail(
+      "SHOPEE_PUSH_URL",
+      "must be the https URL registered in the Shopee console",
+    );
   } else {
     ok("SHOPEE_PUSH_URL", pushUrl);
   }
@@ -117,20 +173,33 @@ function checkEnvironment() {
 
   if (env.SHOPEE_GATEWAY_MODE === "live") {
     console.log("\nshopee live credentials");
-    if ((env.SHOPEE_PARTNER_ID ?? "0") !== "0" && env.SHOPEE_PARTNER_ID) ok("SHOPEE_PARTNER_ID", "set");
+    if ((env.SHOPEE_PARTNER_ID ?? "0") !== "0" && env.SHOPEE_PARTNER_ID)
+      ok("SHOPEE_PARTNER_ID", "set");
     else fail("SHOPEE_PARTNER_ID", "unset");
 
     const partnerKey = env.SHOPEE_PARTNER_KEY ?? "";
-    if (partnerKey.length >= 20) ok("SHOPEE_PARTNER_KEY", `${partnerKey.length} characters`);
+    if (partnerKey.length >= 20)
+      ok("SHOPEE_PARTNER_KEY", `${partnerKey.length} characters`);
     else fail("SHOPEE_PARTNER_KEY", "missing or a placeholder");
 
     if (env.SHOPEE_ENV === "production") ok("SHOPEE_ENV", "production");
-    else warn("SHOPEE_ENV", `${env.SHOPEE_ENV ?? "sandbox"}: orders will not match the live shop`);
+    else
+      warn(
+        "SHOPEE_ENV",
+        `${env.SHOPEE_ENV ?? "sandbox"}: orders will not match the live shop`,
+      );
 
-    if (env.SHOPEE_PUSH_TEST_PARTNER_KEY) warn("SHOPEE_PUSH_TEST_PARTNER_KEY", "set: only for console test pushes, remove after go-live");
+    if (env.SHOPEE_PUSH_TEST_PARTNER_KEY)
+      warn(
+        "SHOPEE_PUSH_TEST_PARTNER_KEY",
+        "set: only for console test pushes, remove after go-live",
+      );
   } else {
     console.log("\nshopee live credentials");
-    warn("SHOPEE_GATEWAY_MODE", `${env.SHOPEE_GATEWAY_MODE ?? "fixture"}: the pipeline runs against fixtures, not Shopee`);
+    warn(
+      "SHOPEE_GATEWAY_MODE",
+      `${env.SHOPEE_GATEWAY_MODE ?? "fixture"}: the pipeline runs against fixtures, not Shopee`,
+    );
   }
 }
 
@@ -147,57 +216,96 @@ async function checkService() {
   else fail("database", `${ready.status} ${JSON.stringify(ready.body)}`);
 
   if (!PASSWORD) {
-    warn("admin login", "ADMIN_PASSWORD is unset: skipping the authenticated checks");
+    warn(
+      "admin login",
+      "ADMIN_PASSWORD is unset: skipping the authenticated checks",
+    );
     return;
   }
 
-  const login = await call("POST", "/api/auth/login", { email: EMAIL, password: PASSWORD });
+  const login = await call("POST", "/api/auth/login", {
+    email: EMAIL,
+    password: PASSWORD,
+  });
   if (login.status !== 200) {
     fail("admin login", `${login.status} ${JSON.stringify(login.body)}`);
     return;
   }
   if (login.body?.mfaRequired) {
-    warn("admin login", "account has 2FA: the rest of the checks need a session cookie");
+    warn(
+      "admin login",
+      "account has 2FA: the rest of the checks need a session cookie",
+    );
     return;
   }
   ok("admin login", login.body?.user?.email);
 
   const stores = await call("GET", "/api/admin/stores");
-  const connected = (stores.body?.data ?? []).filter((store) => store.status === "CONNECTED");
+  const connected = (stores.body?.data ?? []).filter(
+    (store) => store.status === "CONNECTED",
+  );
   cachedShopId = connected[0]?.shopId ?? null;
-  if (connected.length > 0) ok("connected stores", connected.map((store) => store.label ?? store.shopId).join(", "));
+  if (connected.length > 0)
+    ok(
+      "connected stores",
+      connected.map((store) => store.label ?? store.shopId).join(", "),
+    );
   else fail("connected stores", "none: nothing can be fulfilled");
 
   for (const store of connected) {
     const detail = await call("GET", `/api/admin/stores/${store.id}`);
     const token = detail.body?.token;
-    const expiry = token?.minutesLeft ?? (token?.expiresAt ? (new Date(token.expiresAt).getTime() - Date.now()) / 60_000 : null);
+    const expiry =
+      token?.minutesLeft ??
+      (token?.expiresAt
+        ? (new Date(token.expiresAt).getTime() - Date.now()) / 60_000
+        : null);
     const name = store.label ?? store.shopId;
-    if (typeof expiry !== "number" || Number.isNaN(expiry)) warn(`token ${name}`, "no token expiry reported");
-    else if (expiry < 0) fail(`token ${name}`, `expired ${Math.abs(Math.round(expiry))} minutes ago`);
-    else if (expiry < 60) warn(`token ${name}`, `expires in ${Math.round(expiry)} minutes`);
+    if (typeof expiry !== "number" || Number.isNaN(expiry))
+      warn(`token ${name}`, "no token expiry reported");
+    else if (expiry < 0)
+      fail(
+        `token ${name}`,
+        `expired ${Math.abs(Math.round(expiry))} minutes ago`,
+      );
+    else if (expiry < 60)
+      warn(`token ${name}`, `expires in ${Math.round(expiry)} minutes`);
     else ok(`token ${name}`, `${Math.round(expiry / 60)} hours left`);
   }
 
   const monitoring = await call("GET", "/api/admin/monitoring");
   if (monitoring.status === 200) {
     const body = monitoring.body;
-    if ((body.deadJobs ?? []).length > 0) fail("dead-letter jobs", `${body.deadJobs.length} waiting for an operator`);
+    if ((body.deadJobs ?? []).length > 0)
+      fail(
+        "dead-letter jobs",
+        `${body.deadJobs.length} waiting for an operator`,
+      );
     else ok("dead-letter jobs", "none");
 
-    if (body.unmapped?.listings > 0) warn("unmapped listings", `${body.unmapped.listings} would block a paid order`);
+    if (body.unmapped?.listings > 0)
+      warn(
+        "unmapped listings",
+        `${body.unmapped.listings} would block a paid order`,
+      );
     else ok("unmapped listings", "none");
 
-    if ((body.alerts ?? []).length > 0) warn("monitoring alerts", body.alerts.map((alert) => alert.message).join(" | "));
+    if ((body.alerts ?? []).length > 0)
+      warn(
+        "monitoring alerts",
+        body.alerts.map((alert) => alert.message).join(" | "),
+      );
     else ok("monitoring alerts", "none");
 
-    if (body.webhooks?.configured === false) warn("push endpoint", "not configured in this deployment");
+    if (body.webhooks?.configured === false)
+      warn("push endpoint", "not configured in this deployment");
   } else {
     fail("monitoring", `${monitoring.status}`);
   }
 
   const chain = await call("GET", "/api/admin/security/audit-chain?limit=5000");
-  if (chain.status === 200 && chain.body.valid) ok("audit chain", `${chain.body.checked} entries verified`);
+  if (chain.status === 200 && chain.body.valid)
+    ok("audit chain", `${chain.body.checked} entries verified`);
   else fail("audit chain", JSON.stringify(chain.body));
 }
 
@@ -221,13 +329,28 @@ async function checkPublic() {
       continue;
     }
     try {
-      const response = await fetch(`${origin.replace(/\/$/, "")}${path}`, { redirect: "manual", signal: AbortSignal.timeout(15_000) });
+      const response = await fetch(`${origin.replace(/\/$/, "")}${path}`, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(15_000),
+      });
       // Cloudflare answers 404 when DNS exists but the tunnel has no hostname for it.
-      if (response.status === 404) fail(`${label} host`, "404: DNS exists but the tunnel ingress row is missing");
-      else if (response.status >= 500) fail(`${label} host`, `${response.status}`);
-      else ok(`${label} host`, `${response.status} ${response.headers.get("server") ?? ""}`.trim());
+      if (response.status === 404)
+        fail(
+          `${label} host`,
+          "404: DNS exists but the tunnel ingress row is missing",
+        );
+      else if (response.status >= 500)
+        fail(`${label} host`, `${response.status}`);
+      else
+        ok(
+          `${label} host`,
+          `${response.status} ${response.headers.get("server") ?? ""}`.trim(),
+        );
     } catch (error) {
-      fail(`${label} host`, error instanceof Error ? error.message : String(error));
+      fail(
+        `${label} host`,
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
@@ -251,23 +374,40 @@ async function checkPublic() {
     timestamp: Math.floor(Date.now() / 1000),
     data: { ordersn: `PREFLIGHT${Date.now()}`, status: "READY_TO_SHIP" },
   });
-  const signature = createHmac("sha256", partnerKey).update(pushUrl + body).digest("hex");
+  const signature = createHmac("sha256", partnerKey)
+    .update(pushUrl + body)
+    .digest("hex");
 
   const send = (auth) =>
     fetch(pushUrl, {
       method: "POST",
-      headers: { "content-type": "application/json", ...(auth ? { authorization: auth } : {}) },
+      headers: {
+        "content-type": "application/json",
+        ...(auth ? { authorization: auth } : {}),
+      },
       body,
       signal: AbortSignal.timeout(15_000),
     });
 
   const forged = await send("0".repeat(64));
   if (forged.status === 401) ok("forged push refused", "401");
-  else fail("forged push refused", `${forged.status}: the endpoint accepted an unsigned body`);
+  else
+    fail(
+      "forged push refused",
+      `${forged.status}: the endpoint accepted an unsigned body`,
+    );
 
   const genuine = await send(signature);
-  if (genuine.status === 200) ok("signed push accepted", await genuine.text().then((text) => text.slice(0, 80)));
-  else fail("signed push accepted", `${genuine.status}: check SHOPEE_PUSH_URL matches the registered URL exactly`);
+  if (genuine.status === 200)
+    ok(
+      "signed push accepted",
+      await genuine.text().then((text) => text.slice(0, 80)),
+    );
+  else
+    fail(
+      "signed push accepted",
+      `${genuine.status}: check SHOPEE_PUSH_URL matches the registered URL exactly`,
+    );
 }
 
 /* ------------------------------------------------------------------------ report */
@@ -278,13 +418,19 @@ async function main() {
   try {
     await checkService();
   } catch (error) {
-    fail("service checks", error instanceof Error ? error.message : String(error));
+    fail(
+      "service checks",
+      error instanceof Error ? error.message : String(error),
+    );
   }
   if (PUBLIC_MODE) {
     try {
       await checkPublic();
     } catch (error) {
-      fail("public checks", error instanceof Error ? error.message : String(error));
+      fail(
+        "public checks",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
@@ -297,7 +443,11 @@ async function main() {
     console.log(failed.map((entry) => `  - ${entry.label}`).join("\n"));
     process.exitCode = 1;
   } else {
-    console.log(failed.length === 0 && warned.length === 0 ? "preflight: PASS" : "preflight: PASS with warnings");
+    console.log(
+      failed.length === 0 && warned.length === 0
+        ? "preflight: PASS"
+        : "preflight: PASS with warnings",
+    );
   }
 }
 

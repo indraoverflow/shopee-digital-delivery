@@ -10,6 +10,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Both jobs only read the repository. Declaring it keeps the default token from
+# carrying write scopes it never uses, which is what the code scanner asks for.
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: Typecheck, test, build

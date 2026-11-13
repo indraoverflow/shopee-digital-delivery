@@ -103,7 +103,47 @@ risk from the SaaS model. It also means the private-API risk described in
 | 3     | PDP documents, per-tenant retention and backups, status page        | 1 to 2 weeks |
 | 4     | pilot with 3 to 5 paying shops, then general availability           | 2 weeks      |
 
-## 8. Decisions still open
+## 8. Gate: the product is validated internally before any of this starts
+
+The tenant work above is **not** started, and the reason is deliberate: this platform has to prove
+itself on the owner's own shops first. A SaaS sold on an unproven delivery pipeline transfers every
+unverified edge case to a paying customer.
+
+The gate, as agreed on 2026-11-13. Every line must be true before phase 1 of section 7 begins.
+
+| #   | Condition                                                                                                                                            | Status                                                         |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1   | A real Shopee order runs the whole path: push, verification, claim, delivery, shipment back to Shopee, confirmed as **Dikirim** in the seller centre | not met, no partner credentials yet                            |
+| 2   | e-Meterai minted for a real order through the portal, balance dropping by the ordered quantity                                                       | not met, feature built and tested against a fake supplier only |
+| 3   | At least one full month of own-shop traffic with no lost order and no delivery the buyer could not open                                              | not met, demo data only                                        |
+| 4   | Scheduled backups running nightly with one restore performed from the offsite copy                                                                   | not met, script exists, schedule does not                      |
+| 5   | 2FA on the owner account, IP allow list set for the console                                                                                          | not met                                                        |
+| 6   | Monitoring alerts reaching a phone, not only a web page                                                                                              | not met                                                        |
+| 7   | Runbooks exercised once each: token rotation, revocation, stuck queue, restore                                                                       | partly, written but not rehearsed                              |
+
+Until then the honest label on this platform is "internal, fixture shipping, one shop at a time", and
+the production readiness report already says exactly that.
+
+## 9. Infrastructure: homelab first, small VPS at the first paying customer
+
+Measured on the current stack: web 82 MB, worker 46 MB, api 56 MB, postgres 34 MB, database 10 MB after
+weeks of demo traffic. The workload is small; the constraint for a paid service is uptime, not hardware.
+
+| Stage                      | Where                                                             | Why                                        |
+| -------------------------- | ----------------------------------------------------------------- | ------------------------------------------ |
+| Build and internal testing | homelab, current compose stack, Cloudflare Tunnel                 | free, full control, experiments allowed    |
+| First paying customers     | small VPS, 2 vCPU / 4 GB, Singapore or Jakarta, same compose file | uptime, real IP reputation, backup offsite |
+| Beyond roughly 50 tenants  | VPS with Postgres separated or managed, second worker replica     | isolate the database from app restarts     |
+
+A 64 GB homelab upgrade is not a prerequisite and would not be used by this workload. The money that
+buys uptime is a UPS, a second ISP or 4G failover, offsite object storage for backups, and a small VPS,
+in that order.
+
+Running production on the homelab stays possible, but only with a UPS, a second uplink, tested offsite
+restores, external uptime checks and a written maintenance window. Without those, it is a beta, and
+should be sold as one.
+
+## 10. Decisions still open
 
 1. **Licence.** `package.json` and the vendor package are MIT, which lets anyone resell this code. If the
    SaaS is meant to be closed, the platform code needs a proprietary licence; the integration package can

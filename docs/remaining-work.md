@@ -83,12 +83,17 @@ is made to keep shipping manual and the auto-ship switch is turned off.
 
 ## 8. Multi-tenant SaaS, if that is the direction
 
-**DESIGN ONLY.** `docs/saas-tenant-design.md` records the tenancy model, the claim-domain decision
-(subdomain per tenant by default, own domain on paid plans, path on the tenant's main domain only for
-tenants already behind Cloudflare) and a four-phase plan. Nothing of it is implemented: there is no
-`tenants` table, no billing, and `system_settings` is still global.
+**DESIGN ONLY, and gated.** `docs/saas-tenant-design.md` records the tenancy model, the claim-domain
+decision (subdomain per tenant by default, own domain on paid plans, path on the tenant's main domain
+only for tenants already behind Cloudflare), the infrastructure plan and a four-phase estimate. Nothing
+of it is implemented: there is no `tenants` table, no billing, `system_settings` is still global.
 
-Closes when the phases in that document are done and one paying tenant is running on isolated data.
+The owner has decided the product is validated internally first, so the document opens with a gate of
+seven conditions that must be true before any tenant work starts: a real Shopee round trip confirmed as
+Dikirim, a real e-Meterai mint, a month of own-shop traffic without a lost order, nightly backups with a
+restore from the offsite copy, 2FA and IP allow list, alerts reaching a phone, and rehearsed runbooks.
+
+Closes when that gate is met and the phases in the design document are done.
 
 ## 9. Unmapped listings at handover
 

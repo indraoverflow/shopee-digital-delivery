@@ -3,11 +3,21 @@ packages:
   - "packages/*"
   - "vendor/shopee-integration"
 
-# pnpm 10+ blocks dependency postinstall scripts unless they are listed. Each
-# entry here is a package that ships a native binary and needs one of its own.
-onlyBuiltDependencies:
-  - esbuild
-  - sharp
-  - unrs-resolver
-  - "@tailwindcss/oxide"
-  - better-sqlite3
+# pnpm 12 keeps workspace settings here; the `pnpm` field in package.json is no
+# longer read. Each allowBuilds entry is a package that ships a native binary and
+# needs its own postinstall.
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+  "@tailwindcss/oxide": true
+  better-sqlite3: true
+
+# Two build-time packages that a parent still pins to a vulnerable range. Both
+# are scoped to the subtree that pulls them, and both are verified by running the
+# tool afterwards (eslint loads minimatch for real, drizzle-kit loads its config
+# loader for real), because a forced major is a compatibility claim.
+overrides:
+  minimatch: ^11.0.8
+  "@esbuild-kit/core-utils>esbuild": ^0.25.12
+  "@esbuild-kit/esm-loader>esbuild": ^0.25.12

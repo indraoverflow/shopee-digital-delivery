@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { schema } from "@qansa/db";
+import { encryptSecret } from "@qansa/core";
 import { apiHarness, type ApiHarness } from "./helpers.js";
 
 /**
@@ -25,16 +26,24 @@ afterEach(async () => {
 const admin = (method: "GET" | "POST", url: string) =>
   h.app.inject({ method, url, headers: { cookie: session.cookie, "x-csrf-token": session.csrf } });
 
-async function seedOrder(state: "VALIDATED" | "FULFILLED" | "CLAIMED" | "COMPLETED", shopeeStatus: string) {
+async function seedOrder(state: "VALIDATED" | "FULFILLED" | "CLAIMED" | "COMPLETED", shopeeStatus: string, orderSn?: string) {
   const [store] = await h.db.db
     .insert(schema.shopeeStores)
     .values({ shopId: 771001, label: "pixelbloomid", status: "CONNECTED", environment: "SANDBOX" })
     .returning();
+  // Shipping needs a live token for the store, exactly like a connected shop.
+  await h.db.db.insert(schema.shopeeTokens).values({
+    storeId: store!.id,
+    accessTokenEnc: encryptSecret("fixture-access", h.config.service.appEncryptionKey),
+    refreshTokenEnc: encryptSecret("fixture-refresh", h.config.service.appEncryptionKey),
+    expiresAt: new Date(Date.now() + 4 * 3600_000),
+  });
+
   const [order] = await h.db.db
     .insert(schema.orders)
     .values({
       storeId: store!.id,
-      orderSn: `260101TEST${Math.floor(Math.random() * 9000) + 1000}`,
+      orderSn: orderSn ?? `260101TEST${Math.floor(Math.random() * 9000) + 1000}`,
       shopeeStatus,
       state,
       buyerUsername: "rina_kurnia",
@@ -44,6 +53,62 @@ async function seedOrder(state: "VALIDATED" | "FULFILLED" | "CLAIMED" | "COMPLET
     .returning();
   return order!;
 }
+
+describe("marking an order shipped from the console", () => {
+  it("arranges shipment in Shopee and clears the monitoring alert", async () => {
+    const order = await seedOrder("CLAIMED", "READY_TO_SHIP", "260101PXL0001");
+    expect((await admin("GET", "/api/admin/monitoring")).json().shipping.awaitingShipment).toBe(1);
+
+    const shipped = await h.app.inject({
+      method: "POST",
+      url: `/api/admin/orders/${order.id}/ship`,
+      headers: { cookie: session.cookie, "x-csrf-token": session.csrf },
+    });
+
+    expect(shipped.statusCode).toBe(200);
+    expect(shipped.json()).toMatchObject({ ok: true, shopeeStatus: "SHIPPED", alreadyShipped: false });
+
+    const [after] = await h.db.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
+    expect(after!.shopeeStatus).toBe("SHIPPED");
+    expect((await admin("GET", "/api/admin/monitoring")).json().shipping.awaitingShipment).toBe(0);
+  });
+
+  it("refuses a second shipment with a clear answer instead of an error", async () => {
+    const order = await seedOrder("CLAIMED", "SHIPPED", "260101PXL0001");
+    const again = await h.app.inject({
+      method: "POST",
+      url: `/api/admin/orders/${order.id}/ship`,
+      headers: { cookie: session.cookie, "x-csrf-token": session.csrf },
+    });
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({ alreadyShipped: true, shopeeStatus: "SHIPPED" });
+  });
+
+  it("is closed to a viewer, who may read orders but not act on them", async () => {
+    const order = await seedOrder("CLAIMED", "READY_TO_SHIP", "260101PXL0001");
+    const viewer = await h.login("viewer@qansa.web.id", "viewer-password-2026");
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: `/api/admin/orders/${order.id}/ship`,
+      headers: { cookie: viewer.cookie, "x-csrf-token": viewer.csrf },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe("FORBIDDEN");
+  });
+
+  it("also closes resync to a viewer", async () => {
+    const order = await seedOrder("CLAIMED", "READY_TO_SHIP", "260101PXL0001");
+    const viewer = await h.login("viewer@qansa.web.id", "viewer-password-2026");
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: `/api/admin/orders/${order.id}/resync`,
+      headers: { cookie: viewer.cookie, "x-csrf-token": viewer.csrf },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+});
 
 describe("monitoring: awaiting shipment", () => {
   it("reports nothing when there is nothing waiting", async () => {

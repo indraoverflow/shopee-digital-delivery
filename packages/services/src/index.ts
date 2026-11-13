@@ -9,6 +9,7 @@ export * from "./queue.js";
 export * from "./retention.js";
 export * from "./rotation.js";
 export * from "./settings.js";
+export * from "./shipping.js";
 export * from "./storage-s3.js";
 export * from "./sync.js";
 export * from "./tokens.js";

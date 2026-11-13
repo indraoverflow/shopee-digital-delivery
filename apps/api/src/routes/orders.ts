@@ -5,7 +5,7 @@ import { schema } from "@qansa/db";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { requirePermission } from "../auth.js";
 import { paginate, paginationSchema } from "./common.js";
-import { enqueue } from "@qansa/services";
+import { enqueue, markShipped } from "@qansa/services";
 
 /**
  * Order visibility. The admin pages read from this module; nothing here can
@@ -18,7 +18,9 @@ const states = ["RECEIVED", "VALIDATED", "FULFILLED", "CLAIMED", "COMPLETED", "I
 export async function orderRoutes(app: FastifyInstance): Promise<void> {
   const { ctx } = app;
   const read = requirePermission(ctx, "order:read");
-  const write = requirePermission(ctx, "order:read");
+  // Resync and shipment are writes: a VIEWER must not be able to requeue jobs or
+  // move an order in Shopee just because it may read the list.
+  const write = requirePermission(ctx, "order:write");
 
   app.get("/api/admin/orders", { preHandler: read }, async (request) => {
     const query = paginationSchema
@@ -155,5 +157,20 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     });
 
     return { queued: true, jobId };
+  });
+
+  /**
+   * Arranges shipment in Shopee for an order the buyer has already collected.
+   * Without this, Shopee cancels the unshipped order and refunds a product that
+   * was delivered. Operator action, audited, never a side effect of claiming.
+   */
+  app.post<{ Params: { id: string } }>("/api/admin/orders/:id/ship", { preHandler: write }, async (request) => {
+    const user = request.user;
+    const result = await markShipped(ctx.deps, {
+      orderId: request.params.id,
+      actor: { id: user?.id ?? "system", email: user?.email ?? "system" },
+      ip: request.ip,
+    });
+    return { ok: true, ...result };
   });
 }

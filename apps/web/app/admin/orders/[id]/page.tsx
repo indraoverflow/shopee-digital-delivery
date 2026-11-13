@@ -2,7 +2,7 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, RotateCcw, ShieldOff, Undo2 } from "lucide-react";
+import { ArrowLeft, RotateCcw, ShieldOff, Truck, Undo2 } from "lucide-react";
 import { ApiError, api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { useAuth } from "@/lib/auth";
@@ -40,6 +40,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const { toast } = useToast();
   const detail = useApi<OrderDetail>(`/admin/orders/${id}`);
   const [busy, setBusy] = useState<string | null>(null);
+  const [shipOpen, setShipOpen] = useState(false);
   const [revoke, setRevoke] = useState<string | null>(null);
   const [reissue, setReissue] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -74,9 +75,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               <ArrowLeft className="h-3.5 w-3.5" /> Kembali
             </Link>
             {order ? <StatusBadge map={ORDER_STATE} value={order.state} /> : null}
-            {order && can("order:read") ? (
+            {order && can("order:write") ? (
               <Button size="sm" variant="secondary" loading={busy === `/admin/orders/${id}/resync`} onClick={() => void run(`/admin/orders/${id}/resync`, {}, "Pemrosesan ulang diantrikan")}>
                 <RotateCcw className="h-3.5 w-3.5" /> Proses ulang
+              </Button>
+            ) : null}
+            {order && can("order:write") && order.shopeeStatus === "READY_TO_SHIP" && ["FULFILLED", "CLAIMED", "COMPLETED"].includes(order.state) ? (
+              <Button size="sm" loading={busy === `/admin/orders/${id}/ship`} onClick={() => setShipOpen(true)}>
+                <Truck className="h-3.5 w-3.5" /> Tandai dikirim
               </Button>
             ) : null}
           </div>
@@ -274,6 +280,16 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </TableShell>
         </SectionCard>
       </div>
+
+      <ConfirmDialog
+        open={shipOpen}
+        onOpenChange={setShipOpen}
+        title="Tandai pesanan ini dikirim di Shopee?"
+        description="Produk sudah diserahkan lewat portal, jadi Shopee perlu tahu pesanan ini sudah dikirim. Tanpa ini Shopee dapat membatalkan pesanan dan mengembalikan uang pembeli."
+        confirmLabel="Tandai dikirim"
+        loading={busy === `/admin/orders/${id}/ship`}
+        onConfirm={() => void run(`/admin/orders/${id}/ship`, {}, "Pengiriman dikonfirmasi di Shopee")}
+      />
 
       <ConfirmDialog
         open={revoke !== null}

@@ -13,6 +13,7 @@ export const PERMISSIONS = [
   "product:write",
   "mapping:write",
   "order:read",
+  "order:write",
   "claim:read",
   "claim:write",
   "monitoring:read",
@@ -35,6 +36,7 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "product:write",
     "mapping:write",
     "order:read",
+    "order:write",
     "claim:read",
     "claim:write",
     "monitoring:read",
@@ -42,7 +44,18 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ],
   // Operators run the day: they map products and help buyers, they do not
   // connect stores or change security settings.
-  OPERATOR: ["overview:read", "store:read", "catalog:read", "product:read", "mapping:write", "order:read", "claim:read", "claim:write", "monitoring:read"],
+  OPERATOR: [
+    "overview:read",
+    "store:read",
+    "catalog:read",
+    "product:read",
+    "mapping:write",
+    "order:read",
+    "order:write",
+    "claim:read",
+    "claim:write",
+    "monitoring:read",
+  ],
   VIEWER: ["overview:read", "store:read", "catalog:read", "product:read", "order:read", "claim:read", "monitoring:read"],
 };
 

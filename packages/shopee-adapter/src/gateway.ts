@@ -91,6 +91,12 @@ export interface ShopeeGateway {
   listOrdersByUpdateTime(access: StoreAccess, window: OrderWindowQuery): Promise<{ orderSns: string[]; truncated: boolean }>;
   getOrders(access: StoreAccess, orderSns: string[]): Promise<NormalisedOrder[]>;
   listProducts(access: StoreAccess, options?: { maxPages?: number }): Promise<{ products: NormalisedProduct[]; truncated: boolean }>;
+  /**
+   * Arranges shipment for one order, the same click the seller would make in the
+   * seller centre. Optional on purpose: a gateway that cannot ship must not be
+   * silently assumed to have shipped.
+   */
+  shipOrder?(access: StoreAccess, orderSn: string): Promise<{ shipped: boolean; packageNumber?: string | null }>;
 }
 
 /* --------------------------------------------------------- normalisation */
@@ -275,6 +281,25 @@ export class LiveShopeeGateway implements ShopeeGateway {
     }
   }
 
+  /**
+   * Shopee's logistics ship_order. Only valid for orders whose channel lets the
+   * seller arrange the pickup; a channel that is already integrated answers
+   * `error_logistics_not_supported`, which the caller surfaces verbatim instead of
+   * pretending the order shipped.
+   */
+  async shipOrder(access: StoreAccess, orderSn: string) {
+    try {
+      const response = await this.client.shopPost<{ order_sn?: string; package_number?: string }>(
+        "/api/v2/logistics/ship_order",
+        { accessToken: access.accessToken, shopId: access.shopId },
+        { order_sn: orderSn },
+      );
+      return { shipped: true, packageNumber: response?.package_number ?? null };
+    } catch (error) {
+      throw wrapShopeeError(error);
+    }
+  }
+
   async listProducts(access: StoreAccess, options: { maxPages?: number } = {}) {
     try {
       const catalogue = await listAllItems(this.client, { accessToken: access.accessToken, shopId: access.shopId }, {
@@ -414,6 +439,26 @@ export class FixtureShopeeGateway implements ShopeeGateway {
       region: store.region ?? "ID",
       status: store.status ?? "NORMAL",
     };
+  }
+
+  /**
+   * Moves the order to SHIPPED in memory. The fixture object is shared by every
+   * call inside one process, so a later sync in the same process sees the new
+   * status; the worker runs in another process and will still hold the original,
+   * which is why a fixture order can revert on the next reconciliation. Live mode
+   * has no such problem: Shopee is the source of truth and it keeps the shipment.
+   */
+  async shipOrder(access: StoreAccess, orderSn: string) {
+    this.maybeFail("shipOrder");
+    const store = this.store(access.shopId);
+    const order = (store.orders ?? []).find((entry) => entry.order_sn === orderSn);
+    if (!order) throw new ShopeeGatewayError("error_order_not_exist", `order ${orderSn} not found`, false);
+    if (!["READY_TO_SHIP", "PROCESSED"].includes(order.order_status.toUpperCase())) {
+      throw new ShopeeGatewayError("error_order_status", `order ${orderSn} is ${order.order_status}`, false);
+    }
+    order.order_status = "SHIPPED";
+    order.update_time = Math.floor(Date.now() / 1000);
+    return { shipped: true, packageNumber: `FIXTURE-${orderSn}` };
   }
 
   async listOrdersByUpdateTime(access: StoreAccess, window: OrderWindowQuery) {

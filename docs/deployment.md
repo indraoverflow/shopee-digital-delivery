@@ -244,6 +244,22 @@ empty unless the operators have stable addresses: a wrong entry locks everyone o
 Health endpoints: `GET /health` (liveness, includes gateway mode) and `GET /ready` (database probe).
 Compose healthchecks use `/health` for the API and `/` for the web app.
 
+## Preflight before going live
+
+`scripts/preflight.mjs` is the checklist as a command. It checks the environment (keys, origins, secure
+cookies, push URL, and the Shopee credentials when the gateway is live), the service (health, database,
+admin login, store tokens, dead letters, unmapped listings, audit chain) and, with `--public`, the three
+public hostnames plus a signed push and a forged one:
+
+```bash
+node --env-file=.env scripts/preflight.mjs                       # local, against 127.0.0.1:4000
+API_URL=https://api.qansa.web.id node --env-file=.env scripts/preflight.mjs --public
+```
+
+It exits non-zero on a blocking failure, so it can gate a deploy. A `404` on a public hostname means DNS
+exists but the tunnel has no ingress row for it; the push probe reports `ignored` for a shop that is not
+registered and `queued` for one that is.
+
 ## Post-deploy checklist
 
 - [ ] `curl -s https://api.qansa.web.id/health` → `{"ok":true,...}` with the expected mode

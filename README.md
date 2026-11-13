@@ -214,9 +214,11 @@ connects a store, syncs the catalogue, maps a variation, receives a push, claims
 revokes the claim, all through Fastify's injector.
 
 `scripts/smoke.mjs` is the other half: it runs the same path against a *running* stack with a real
-PostgreSQL, which is what CI cannot prove. `scripts/verify-s3.ts` does the same for object storage: it
-writes, reads and deletes an object against any S3-compatible endpoint, so the hand-written SigV4
-signer is checked against a real server and not only against a mock.
+PostgreSQL, which is what CI cannot prove. `scripts/preflight.mjs` is the go-live gate: environment,
+service, tokens, dead letters, audit chain, public hostnames, and a signed push against a forged one.
+`scripts/verify-s3.ts` does the same for object storage: it writes, reads and deletes an object against
+any S3-compatible endpoint, so the hand-written SigV4 signer is checked against a real server and not
+only against a mock.
 
 ```bash
 S3_ENDPOINT=http://127.0.0.1:19000 S3_BUCKET=qansa-assets \

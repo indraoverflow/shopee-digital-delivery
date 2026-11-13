@@ -98,7 +98,7 @@ flowchart TB
 
   subgraph "apps/web (Next.js)"
     PX[proxy.ts host routing]
-    RW[/api/backend rewrite/]
+    RW[/api/backend proxy/]
   end
 
   subgraph "apps/api (Fastify)"

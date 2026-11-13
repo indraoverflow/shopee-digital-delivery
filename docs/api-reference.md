@@ -1,7 +1,8 @@
 # API reference
 
 Base URL: `https://api.qansa.web.id`. The web app calls the same routes through its
-`/api/backend/*` rewrite, so browser requests are same-origin.
+`/api/backend/*` proxy route handler, so browser requests are same-origin. The proxy reads `API_URL`
+on every request: a Next rewrite would bake the build machine's value into the image.
 
 Conventions:
 

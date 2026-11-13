@@ -1,24 +1,18 @@
 import type { NextConfig } from "next";
 
 /**
- * The browser talks to this app only. Requests under /api/backend are proxied to
- * the Fastify API, so session cookies stay first-party on the claim and admin
- * hosts and no CORS preflight is needed in production.
+ * The browser talks to this app only. /api/backend, /webhook and /health are
+ * proxy route handlers (app/api/backend/[...path], app/webhook/[...path],
+ * app/health) rather than rewrites: a rewrite is resolved when Next builds, so
+ * the API_URL of the build machine would be baked into the image and a container
+ * could never reach a sibling container. Read next.config's own comment history
+ * before moving them back.
  */
-const apiUrl = process.env.API_URL ?? "http://127.0.0.1:4000";
-
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   output: "standalone",
   transpilePackages: ["@qansa/core"],
-  async rewrites() {
-    return [
-      { source: "/api/backend/:path*", destination: `${apiUrl}/api/:path*` },
-      { source: "/webhook/:path*", destination: `${apiUrl}/webhook/:path*` },
-      { source: "/health", destination: `${apiUrl}/health` },
-    ];
-  },
   async headers() {
     return [
       {

@@ -140,6 +140,28 @@ Then run the repo's own probes against the new origin:
       node scripts/smoke.mjs
     API_URL=https://api.example.com node scripts/preflight.mjs
 
+## Apex and www
+
+`example.com` and `www.example.com` are one permanent redirect to `claim.example.com`, so the address a
+shop puts in its bio is the short one and every claim still happens on a single host.
+
+Two details keep that working:
+
+- The apex keeps a proxied `A` record pointing at `192.0.2.1`, a documentation address. A
+  redirect rule only fires once traffic reaches Cloudflare, and a proxied record is what gets
+  it there; the origin is never contacted because the rule answers first. Leaving the old
+  `103.163.138.39` there would have kept pointing buyers at a hosting server that does not
+  serve this domain.
+- `www` is a CNAME to the apex, so it inherits the same rule.
+
+The rule is a zone ruleset, `http_request_dynamic_redirect`:
+
+    (http.host eq "example.com") or (http.host eq "www.example.com")
+      -> 301 concat("https://claim.example.com", http.request.uri.path), query preserved
+
+Deleting this rule turns the apex into a Cloudflare error page, not into a working site: the
+placeholder record answers nothing on its own.
+
 ## Rollback
 
 The second tunnel is additive. Stopping `cloudflared-serah` removes the domain from the

@@ -26,7 +26,25 @@ const productSchema = z.object({
   maxDeliveries: z.coerce.number().int().min(1).max(50).default(3),
 });
 
-const updateSchema = productSchema.partial();
+/**
+ * A PATCH must only touch the fields it names. `productSchema.partial()` keeps the
+ * `.default()`s, so a body of `{ name }` silently rewrote status to DRAFT and
+ * meteraiEnabled to false: renaming a live e-Meterai product turned it off. The update
+ * schema below spells every field out as optional and defaultless on purpose.
+ */
+const updateSchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+  deliveryKind: z
+    .enum(["FILE", "LINK", "CODE", "CREDENTIALS", "INSTRUCTIONS"])
+    .optional(),
+  instructions: z.string().trim().max(4000).nullable().optional(),
+  externalUrl: z.string().url().max(500).nullable().optional(),
+  status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
+  meteraiEnabled: z.boolean().optional(),
+  claimExpiryDays: z.coerce.number().int().min(1).max(365).optional(),
+  maxDeliveries: z.coerce.number().int().min(1).max(50).optional(),
+});
 
 const codesSchema = z.object({
   codes: z.array(z.string().trim().min(4).max(500)).min(1).max(500),

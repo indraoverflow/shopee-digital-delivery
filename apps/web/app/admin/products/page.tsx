@@ -8,6 +8,7 @@ import {
   Link2,
   ListChecks,
   Package,
+  Pencil,
   Plus,
 } from "lucide-react";
 import { ApiError, api } from "@/lib/api";
@@ -78,6 +79,8 @@ export default function DigitalProductsPage() {
     meteraiEnabled: false,
   });
   const [formError, setFormError] = useState<string | null>(null);
+  /** Set when the dialog is editing an existing product instead of creating one. */
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const list = useApi<{
     data: DigitalProductRow[];
@@ -86,8 +89,74 @@ export default function DigitalProductsPage() {
     pageSize: number;
   }>(`/admin/digital-products?page=${page}&pageSize=20`);
 
-  const create = async () => {
+  /**
+   * "Produk e-Meterai" is a property of an existing product too, and until now the only
+   * way to set it was to create a new product: the form was create-only. Edit mode reads
+   * the product detail and saves through PATCH, which already existed.
+   */
+  const openEdit = async (id: string) => {
+    setFormError(null);
+    try {
+      const { product } = await api.get<{
+        product: {
+          name: string;
+          deliveryKind: string;
+          status: string;
+          description: string | null;
+          externalUrl: string | null;
+          meteraiEnabled: boolean;
+        };
+      }>(`/admin/digital-products/${id}`);
+      setForm({
+        name: product.name,
+        deliveryKind: product.deliveryKind,
+        status: product.status === "ARCHIVED" ? "DRAFT" : product.status,
+        description: product.description ?? "",
+        externalUrl: product.externalUrl ?? "",
+        meteraiEnabled: product.meteraiEnabled,
+      });
+      setEditingId(id);
+      setOpen(true);
+    } catch (caught) {
+      toast({
+        title: "Gagal memuat produk",
+        description: caught instanceof ApiError ? caught.message : "",
+        tone: "danger",
+      });
+    }
+  };
+
+  const save = async () => {
     setBusy(true);
+    setFormError(null);
+    try {
+      if (editingId) {
+        await api.patch(`/admin/digital-products/${editingId}`, {
+          name: form.name,
+          deliveryKind: form.deliveryKind,
+          ...(form.status === "ARCHIVED" ? {} : { status: form.status }),
+          description: form.description || null,
+          ...(form.deliveryKind === "LINK"
+            ? { externalUrl: form.externalUrl }
+            : {}),
+          meteraiEnabled: form.meteraiEnabled,
+        });
+        toast({
+          title: "Produk diperbarui",
+          description: "Perubahan tersimpan dan tercatat di audit log.",
+        });
+        setOpen(false);
+        setEditingId(null);
+        list.refresh();
+        return;
+      }
+      await create();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const create = async () => {
     setFormError(null);
     try {
       const result = await api.post<{ product: { id: string } }>(
@@ -134,7 +203,20 @@ export default function DigitalProductsPage() {
         description="Apa yang diterima pembeli: berkas, tautan, kode aktivasi, kredensial, atau instruksi."
         actions={
           can("product:write") ? (
-            <Button onClick={() => setOpen(true)}>
+            <Button
+              onClick={() => {
+                setEditingId(null);
+                setForm({
+                  name: "",
+                  deliveryKind: "CODE",
+                  status: "DRAFT",
+                  description: "",
+                  externalUrl: "",
+                  meteraiEnabled: false,
+                });
+                setOpen(true);
+              }}
+            >
               <Plus className="h-4 w-4" /> Produk baru
             </Button>
           ) : null
@@ -161,11 +243,12 @@ export default function DigitalProductsPage() {
               <Th>Stok kode</Th>
               <Th>Masa klaim</Th>
               <Th className="text-right">Dibuat</Th>
+              <Th className="text-right">Aksi</Th>
             </tr>
           </thead>
           <tbody>
             {list.loading ? (
-              <LoadingRows rows={4} cols={7} />
+              <LoadingRows rows={4} cols={8} />
             ) : list.data && list.data.data.length > 0 ? (
               list.data.data.map((product) => {
                 const Icon =
@@ -227,6 +310,17 @@ export default function DigitalProductsPage() {
                     <Td className="text-right text-[12px] text-ink-400">
                       {formatDateTime(product.createdAt)}
                     </Td>
+                    <Td className="text-right">
+                      {can("product:write") ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void openEdit(product.id)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" /> Ubah
+                        </Button>
+                      ) : null}
+                    </Td>
                   </Tr>
                 );
               })
@@ -262,19 +356,23 @@ export default function DigitalProductsPage() {
       <Dialog
         open={open}
         onOpenChange={setOpen}
-        title="Produk digital baru"
-        description="Bisa diubah kapan saja sebelum diaktifkan."
+        title={editingId ? "Ubah produk digital" : "Produk digital baru"}
+        description={
+          editingId
+            ? "Perubahan berlaku untuk pesanan berikutnya dan tercatat di audit log."
+            : "Bisa diubah kapan saja sebelum diaktifkan."
+        }
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
               Batal
             </Button>
             <Button
-              onClick={() => void create()}
+              onClick={() => void save()}
               loading={busy}
               disabled={form.name.trim().length < 2}
             >
-              Buat produk
+              {editingId ? "Simpan perubahan" : "Buat produk"}
             </Button>
           </>
         }

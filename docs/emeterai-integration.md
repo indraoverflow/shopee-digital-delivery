@@ -101,6 +101,9 @@ is not the right tool, for example to test a channel before wiring a product.
 
 1. Settings -> e-Meterai: paste the account user and password, leave the base URL empty, switch it on.
 2. On the product that should mint, tick "Produk e-Meterai". Codes on that product stop being used.
+   The tick is in Produk Digital, either in the "Produk baru" dialog or, for a product that already
+   exists, through "Ubah" on its row; saving goes through `PATCH /api/admin/digital-products/:id`,
+   which only writes the fields it is given.
 3. Place one real order and press "Buat tautan"; confirm the buyer sees the `pdfViewer` link and the
    balance dropped by the ordered quantity.
 4. Decide the failure policy out loud: when a mint fails, an operator has to follow up by hand, because

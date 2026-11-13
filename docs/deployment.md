@@ -152,22 +152,39 @@ The API performs a schema probe at boot and refuses to start with
 
 ## Backups
 
-Two things must be backed up together, because a claim points at a file:
+`scripts/backup.sh` does the whole set and refuses to call it a backup until the dump can be read back:
 
 ```bash
-# database
-docker exec qansa-delivery-postgres-1 pg_dump -U qansa -Fc qansa_delivery > qansa-$(date +%F).dump
+scripts/backup.sh /data/backups          # or the default ./backups
+KEEP_BACKUPS=14 scripts/backup.sh /data/backups
+```
 
-# assets volume
+It writes `qansa-<stamp>.dump` (custom format), `qansa-uploads-<stamp>.tar.gz`, and a copy of `.env`
+as `qansa-<stamp>.env`, then verifies the dump with `pg_restore --list` and prints how many tables of
+data it contains. The `.env` copy is the part people forget: tokens, activation codes and TOTP secrets
+are encrypted with `APP_ENCRYPTION_KEY`, so the dump alone restores rows you cannot read. Move that copy
+to a password manager rather than leaving it on the same disk.
+
+The same steps by hand, when the script is not an option:
+
+```bash
+docker compose exec -T postgres pg_dump -U qansa -Fc qansa_delivery > qansa-$(date +%F).dump
 docker run --rm -v qansa-delivery_uploads:/data -v "$PWD:/backup" alpine \
   tar czf /backup/qansa-uploads-$(date +%F).tar.gz -C /data .
 ```
 
-Restore:
+Nightly, with a copy off the host:
+
+```cron
+15 2 * * * cd /opt/qansa && scripts/backup.sh /data/backups >> /var/log/qansa-backup.log 2>&1
+```
+
+Restore (verified on 2026-11-13 by restoring a dump into a scratch database: 25 tables and the live
+orders came back):
 
 ```bash
 docker compose stop api worker
-docker exec -i qansa-delivery-postgres-1 pg_restore -U qansa -d qansa_delivery --clean --if-exists < qansa-2026-11-12.dump
+docker compose exec -T postgres pg_restore -U qansa -d qansa_delivery --clean --if-exists < qansa-2026-11-12.dump
 docker run --rm -v qansa-delivery_uploads:/data -v "$PWD:/backup" alpine \
   sh -c "rm -rf /data/* && tar xzf /backup/qansa-uploads-2026-11-12.tar.gz -C /data"
 docker compose start api worker

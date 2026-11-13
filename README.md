@@ -18,8 +18,8 @@ order is theirs. Nobody copies a link into a chat by hand.
 | Database schema and migrations | 25 tables, applied against PostgreSQL 17                                                 |
 | API                            | 49 routes, typed end to end (Zod at every boundary)                                      |
 | Buyer portal                   | Working: verified against a real order, code and file delivery, plus manual verification |
-| Admin console                  | 13 pages, all wired to the API                                                           |
-| Automated tests                | 255 tests across 22 files: unit, integration, HTTP journey, worker                       |
+| Admin console                  | 14 pages, all wired to the API                                                           |
+| Automated tests                | 256 tests across 23 files: unit, integration, HTTP journey, worker                       |
 | Smoke test                     | `scripts/smoke.mjs` passes against a live API + worker + PostgreSQL                      |
 | Shopee connection              | `fixture` mode verified; `live` mode needs partner credentials (see below)               |
 | Docker                         | Multi-stage images for API/worker and web, compose stack, nginx                          |
@@ -203,7 +203,7 @@ Details, including the full state diagram, in [`docs/order-fulfillment.md`](docs
 ## Testing
 
 ```bash
-pnpm test         # 255 tests: core rules, SQL/migrations, pipeline, claims, security, shipping, HTTP journey, worker
+pnpm test         # 256 tests: core rules, SQL/migrations, pipeline, claims, security, shipping, HTTP journey, worker
 pnpm typecheck    # every package and app, strict mode
 pnpm -r build     # vendor, API/worker bundles, Next.js production build
 ```
@@ -244,6 +244,9 @@ key. Threat model and residual gaps in [`docs/security.md`](docs/security.md).
 - [`docs/security.md`](docs/security.md) — controls and known gaps
 - [`docs/api-reference.md`](docs/api-reference.md) — every endpoint
 - [`docs/deployment.md`](docs/deployment.md) — compose, domains, backups, upgrades
+- [`docs/production-readiness-report.md`](docs/production-readiness-report.md) — audit, findings, readiness
+- [`docs/live-shopee-checklist.md`](docs/live-shopee-checklist.md) — the ordered path from fixture to live
+- [`docs/remaining-work.md`](docs/remaining-work.md) — what is still open, and how it closes
 - [`docs/troubleshooting.md`](docs/troubleshooting.md) — symptom → cause → fix
 
 ## Known limitations

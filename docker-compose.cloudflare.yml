@@ -1,0 +1,24 @@
+# Optional overlay: run the Cloudflare Tunnel from this compose project instead of
+# a dashboard-managed container. Use it when you want hostnames in git.
+#
+#   cloudflared tunnel login
+#   cloudflared tunnel create qansa-delivery
+#   cp ~/.cloudflared/<tunnel-id>.json docker/cloudflared/credentials.json
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d
+#
+# The credentials file and the tunnel id are secrets: `docker/cloudflared/`
+# credentials are gitignored, only config.yml is committed.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./docker/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./docker/cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started

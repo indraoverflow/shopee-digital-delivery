@@ -54,19 +54,70 @@ forward `Host` unchanged; the web app relies on it.
 
 ### With a Cloudflare tunnel
 
-```yaml
-ingress:
-  - hostname: claim.qansa.web.id
-    service: http://localhost:8080
-  - hostname: admin.qansa.web.id
-    service: http://localhost:8080
-  - hostname: api.qansa.web.id
-    service: http://localhost:8080
-  - service: http_status:404
+There are two ways to run it, and the difference matters when a hostname has to be added later.
+
+**A. Dashboard-managed tunnel (token mode).** The tunnel is started with `--token`, so the ingress
+list lives in Cloudflare, not in this repository. Add one *Public Hostname* per row:
+
+| Public hostname       | Type | URL                          |
+| --------------------- | ---- | ---------------------------- |
+| `claim.qansa.web.id`  | HTTP | `localhost:3300`             |
+| `admin.qansa.web.id`  | HTTP | `localhost:3300`             |
+| `api.qansa.web.id`    | HTTP | `localhost:4000`             |
+
+`localhost` works because the cloudflared container runs with host networking
+(`--network host`). If the tunnel runs as a compose service on the project network instead, the targets
+are `web:3000` and `api:4000`.
+
+The CNAME records must exist in the zone and point at `<tunnel-id>.cfargotunnel.com`, proxied. The
+dashboard creates them when the hostname is added; to create them ahead of time:
+
+```bash
+curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/dns_records" \
+  -H "Authorization: Bearer $CF_API_TOKEN" -H "content-type: application/json" \
+  -d '{"type":"CNAME","name":"claim","content":"<tunnel-id>.cfargotunnel.com","proxied":true}'
 ```
 
-Set `SHOPEE_PUSH_URL=https://api.qansa.web.id/webhook/shopee` and register the same value in the
-Shopee console. A trailing slash or a different scheme breaks the signature.
+**B. Git-managed tunnel (recommended once the hostnames settle).** The ingress lives in
+[`docker/cloudflared/config.yml`](../docker/cloudflared/config.yml), so adding a hostname is a commit:
+
+```bash
+cloudflared tunnel login                                   # browser, one time
+cloudflared tunnel create qansa-delivery                   # writes credentials.json
+cp ~/.cloudflared/<tunnel-id>.json docker/cloudflared/credentials.json
+# set `tunnel:` in docker/cloudflared/config.yml to the created name
+docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d cloudflared
+cloudflared tunnel route dns qansa-delivery claim.qansa.web.id
+cloudflared tunnel route dns qansa-delivery admin.qansa.web.id
+cloudflared tunnel route dns qansa-delivery api.qansa.web.id
+```
+
+The credentials file is gitignored; only `config.yml` is committed.
+
+Either way, the application has to be told it is public:
+
+```bash
+NODE_ENV=production
+SESSION_COOKIE_SECURE=true
+ADMIN_ORIGIN=https://admin.qansa.web.id
+CLAIM_ORIGIN=https://claim.qansa.web.id
+API_PUBLIC_ORIGIN=https://api.qansa.web.id
+SHOPEE_PUSH_URL=https://api.qansa.web.id/webhook/shopee
+```
+
+and register `SHOPEE_PUSH_URL` in the Shopee console. A trailing slash or a different scheme breaks the
+signature.
+
+Verify from outside, in this order:
+
+```bash
+curl -s https://api.qansa.web.id/health                  # {"ok":true,...}
+curl -sI https://claim.qansa.web.id | head -1            # 200
+curl -sI https://admin.qansa.web.id/login | head -1      # 200
+```
+
+A `404` from Cloudflare means the DNS record exists but the tunnel has no hostname for it: the ingress
+row is missing. A Cloudflare `1033` means the tunnel is not connected at all.
 
 ## Environment
 

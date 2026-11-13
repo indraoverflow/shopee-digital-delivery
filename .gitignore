@@ -15,6 +15,10 @@ data/
 .env.*
 !.env.example
 
+# cloudflare tunnel credentials (config.yml is committed, the secret is not)
+docker/cloudflared/credentials.json
+docker/cloudflared/*.json
+
 # tooling
 .DS_Store
 coverage/

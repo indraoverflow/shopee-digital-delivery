@@ -1,0 +1,38 @@
+# Locally managed Cloudflare Tunnel for Qansa Digital Delivery.
+#
+# This file only applies when the tunnel is run with `tunnel run` and a
+# credentials file (git-managed). A tunnel started with `--token` is configured
+# in the Zero Trust dashboard instead, and this file is ignored.
+#
+# Hostnames:
+#   claim.qansa.web.id  buyer portal      -> web
+#   admin.qansa.web.id  operator console  -> web
+#   api.qansa.web.id    API + Shopee push -> api
+#
+# The web app serves both browser hostnames and proxies /api/backend to the API
+# internally, so the browser only ever talks to one origin per hostname.
+
+tunnel: qansa-delivery
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # Shopee pushes are machine traffic straight to the API: keep them off the
+  # Next.js proxy so a slow render can never time out a webhook.
+  - hostname: api.qansa.web.id
+    service: http://api:4000
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: api.qansa.web.id
+
+  - hostname: claim.qansa.web.id
+    service: http://web:3000
+    originRequest:
+      httpHostHeader: claim.qansa.web.id
+
+  - hostname: admin.qansa.web.id
+    service: http://web:3000
+    originRequest:
+      httpHostHeader: admin.qansa.web.id
+
+  # Anything else is refused rather than forwarded somewhere unexpected.
+  - service: http_status:404

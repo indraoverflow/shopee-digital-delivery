@@ -81,7 +81,16 @@ settled without a live call.
 Closes when: one real `ship_order` with a placeholder resi returns `ship_order` success, or the decision
 is made to keep shipping manual and the auto-ship switch is turned off.
 
-## 8. Unmapped listings at handover
+## 8. Multi-tenant SaaS, if that is the direction
+
+**DESIGN ONLY.** `docs/saas-tenant-design.md` records the tenancy model, the claim-domain decision
+(subdomain per tenant by default, own domain on paid plans, path on the tenant's main domain only for
+tenants already behind Cloudflare) and a four-phase plan. Nothing of it is implemented: there is no
+`tenants` table, no billing, and `system_settings` is still global.
+
+Closes when the phases in that document are done and one paying tenant is running on isolated data.
+
+## 9. Unmapped listings at handover
 
 **OPERATIONAL**
 

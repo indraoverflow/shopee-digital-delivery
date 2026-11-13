@@ -14,8 +14,25 @@ const MAX_BYTES = 50 * 1024 * 1024;
 
 /** Extensions a digital product may ship as. Anything else is refused. */
 const ALLOWED_EXTENSIONS = new Set([
-  ".pdf", ".zip", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".txt", ".csv", ".json",
-  ".docx", ".xlsx", ".pptx", ".epub", ".mp3", ".mp4", ".notion", ".psd", ".ai",
+  ".pdf",
+  ".zip",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".svg",
+  ".txt",
+  ".csv",
+  ".json",
+  ".docx",
+  ".xlsx",
+  ".pptx",
+  ".epub",
+  ".mp3",
+  ".mp4",
+  ".notion",
+  ".psd",
+  ".ai",
 ]);
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -29,13 +46,52 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
   ".csv": "text/csv; charset=utf-8",
   ".json": "application/json",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".pptx":
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".epub": "application/epub+zip",
   ".mp3": "audio/mpeg",
   ".mp4": "video/mp4",
 };
+
+/**
+ * The storage seam. The API serves files through this interface, so a
+ * deployment can move assets to S3 without touching claim or delivery logic.
+ */
+export interface AssetStore {
+  readonly kind: "local" | "s3";
+  save(input: { fileName: string; data: Buffer }): Promise<StoredAsset>;
+  read(
+    storageKey: string,
+  ): Promise<{ stream: NodeJS.ReadableStream; sizeBytes: number }>;
+  buffer(storageKey: string): Promise<Buffer>;
+  remove(storageKey: string): Promise<void>;
+}
+
+/**
+ * Validation shared by every driver: applying it before the upload means a
+ * rejected file never reaches storage, whatever the backend.
+ */
+export function assertAcceptableAsset(
+  fileName: string,
+  sizeBytes: number,
+): void {
+  if (sizeBytes <= 0) throw AppError.validation("File kosong");
+  if (sizeBytes > MAX_BYTES)
+    throw AppError.validation("Ukuran file melebihi 50 MB");
+
+  const extension = extname(fileName).toLowerCase();
+  if (!ALLOWED_EXTENSIONS.has(extension)) {
+    throw AppError.validation(
+      `Tipe file ${extension || "(tanpa ekstensi)"} tidak didukung`,
+    );
+  }
+  if (/[\\/]/.test(fileName) || fileName.includes("..")) {
+    throw AppError.validation("Nama file tidak valid");
+  }
+}
 
 export interface StoredAsset {
   storageKey: string;
@@ -45,28 +101,27 @@ export interface StoredAsset {
   sha256: string;
 }
 
-export class LocalAssetStore {
+export class LocalAssetStore implements AssetStore {
+  readonly kind = "local" as const;
+
   constructor(private readonly root: string) {}
 
-  /** Rejects anything that is not a plain, allowed file name. */
+  /** Kept for callers that only need the check. */
   static assertAcceptable(fileName: string, sizeBytes: number): void {
-    if (sizeBytes <= 0) throw AppError.validation("File kosong");
-    if (sizeBytes > MAX_BYTES) throw AppError.validation("Ukuran file melebihi 50 MB");
-    const extension = extname(fileName).toLowerCase();
-    if (!ALLOWED_EXTENSIONS.has(extension)) {
-      throw AppError.validation(`Tipe file ${extension || "(tanpa ekstensi)"} tidak didukung`);
-    }
-    if (/[\\/]/.test(fileName) || fileName.includes("..")) {
-      throw AppError.validation("Nama file tidak valid");
-    }
+    assertAcceptableAsset(fileName, sizeBytes);
   }
 
   async save(input: { fileName: string; data: Buffer }): Promise<StoredAsset> {
-    LocalAssetStore.assertAcceptable(input.fileName, input.data.byteLength);
+    assertAcceptableAsset(input.fileName, input.data.byteLength);
     const safeName = input.fileName.replace(/[^\w.\- ()]/g, "_").slice(0, 120);
-    const storageKey = join(new Date().toISOString().slice(0, 10), `${randomUUID()}-${safeName}`);
+    const storageKey = join(
+      new Date().toISOString().slice(0, 10),
+      `${randomUUID()}-${safeName}`,
+    );
     const target = this.resolve(storageKey);
-    await mkdir(join(this.root, new Date().toISOString().slice(0, 10)), { recursive: true });
+    await mkdir(join(this.root, new Date().toISOString().slice(0, 10)), {
+      recursive: true,
+    });
     await writeFile(target, input.data);
     const extension = extname(safeName).toLowerCase();
     return {
@@ -78,7 +133,9 @@ export class LocalAssetStore {
     };
   }
 
-  async read(storageKey: string): Promise<{ stream: ReturnType<typeof createReadStream>; sizeBytes: number }> {
+  async read(
+    storageKey: string,
+  ): Promise<{ stream: NodeJS.ReadableStream; sizeBytes: number }> {
     const target = this.resolve(storageKey);
     const info = await stat(target);
     return { stream: createReadStream(target), sizeBytes: info.size };

@@ -26,6 +26,23 @@ export interface ClaimSettings {
   downloadTtlMinutes: number;
   /** File downloads allowed per claim. */
   maxDownloadsPerFulfillment: number;
+  /** Days a manual verification request may sit before it expires. */
+  manualRequestDays: number;
+  /** Hours an approved manual verification stays usable. */
+  manualApprovalHours: number;
+}
+
+/**
+ * Outbound notifications. A single webhook keeps the platform dependency-free:
+ * point it at a Slack incoming hook, an n8n flow or the WhatsApp gateway, and a
+ * failed delivery is logged rather than blocking a claim.
+ */
+export interface NotifySettings {
+  enabled: boolean;
+  webhookUrl: string | null;
+  /** HMAC key for the x-qansa-signature header; optional. */
+  secret: string | null;
+  events: string[];
 }
 
 export interface SyncSettings {
@@ -38,6 +55,7 @@ export interface AllSettings {
   branding: BrandingSettings;
   claim: ClaimSettings;
   sync: SyncSettings;
+  notify: NotifySettings;
 }
 
 export const DEFAULT_SETTINGS: AllSettings = {
@@ -54,11 +72,24 @@ export const DEFAULT_SETTINGS: AllSettings = {
     maxAttemptsPerOrder: 12,
     downloadTtlMinutes: 10,
     maxDownloadsPerFulfillment: 5,
+    manualRequestDays: 3,
+    manualApprovalHours: 24,
   },
   sync: {
     productIntervalMinutes: 30,
     orderReconcileMinutes: 10,
     orderLookbackHours: 72,
+  },
+  notify: {
+    enabled: false,
+    webhookUrl: null,
+    secret: null,
+    events: [
+      "claim.completed",
+      "claim.revoked",
+      "fulfillment.out_of_stock",
+      "sync.failed",
+    ],
   },
 };
 
@@ -66,23 +97,47 @@ type SettingKey = keyof AllSettings;
 
 export async function loadSettings(deps: ServiceDeps): Promise<AllSettings> {
   const rows = await deps.db
-    .select({ key: schema.systemSettings.key, value: schema.systemSettings.value })
+    .select({
+      key: schema.systemSettings.key,
+      value: schema.systemSettings.value,
+    })
     .from(schema.systemSettings)
-    .where(inArray(schema.systemSettings.key, ["branding", "claim", "sync"]));
+    .where(
+      inArray(schema.systemSettings.key, [
+        "branding",
+        "claim",
+        "sync",
+        "notify",
+      ]),
+    );
 
-  const stored = new Map(rows.map((row) => [row.key, row.value as Record<string, unknown>]));
+  const stored = new Map(
+    rows.map((row) => [row.key, row.value as Record<string, unknown>]),
+  );
 
   const merge = <K extends SettingKey>(key: K): AllSettings[K] => ({
     ...DEFAULT_SETTINGS[key],
     ...(stored.get(key) ?? {}),
   });
 
-  return { branding: merge("branding"), claim: merge("claim"), sync: merge("sync") };
+  return {
+    branding: merge("branding"),
+    claim: merge("claim"),
+    sync: merge("sync"),
+    notify: merge("notify"),
+  };
 }
 
-export async function saveSetting(deps: ServiceDeps, key: SettingKey, value: unknown): Promise<void> {
+export async function saveSetting(
+  deps: ServiceDeps,
+  key: SettingKey,
+  value: unknown,
+): Promise<void> {
   await deps.db
     .insert(schema.systemSettings)
     .values({ key, value })
-    .onConflictDoUpdate({ target: schema.systemSettings.key, set: { value, updatedAt: new Date() } });
+    .onConflictDoUpdate({
+      target: schema.systemSettings.key,
+      set: { value, updatedAt: new Date() },
+    });
 }

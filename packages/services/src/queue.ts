@@ -10,7 +10,15 @@ import { nowOf } from "./types.js";
  * state that an operator can inspect with plain SQL.
  */
 
-export const JOB_TYPES = ["PROCESS_ORDER", "SYNC_PRODUCTS", "SYNC_ORDERS", "EXPIRE_CLAIMS", "RECONCILE_STORES", "REFRESH_TOKENS"] as const;
+export const JOB_TYPES = [
+  "PROCESS_ORDER",
+  "SYNC_PRODUCTS",
+  "SYNC_ORDERS",
+  "EXPIRE_CLAIMS",
+  "RECONCILE_STORES",
+  "REFRESH_TOKENS",
+  "RETENTION_SWEEP",
+] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 export interface EnqueueInput {
@@ -30,7 +38,10 @@ export interface QueuedJob {
   maxAttempts: number;
 }
 
-export async function enqueue(deps: ServiceDeps, input: EnqueueInput): Promise<string | null> {
+export async function enqueue(
+  deps: ServiceDeps,
+  input: EnqueueInput,
+): Promise<string | null> {
   const [row] = await deps.db
     .insert(schema.jobs)
     .values({
@@ -38,7 +49,9 @@ export async function enqueue(deps: ServiceDeps, input: EnqueueInput): Promise<s
       payload: input.payload,
       dedupeKey: input.dedupeKey ?? null,
       runAt: input.runAt ?? nowOf(deps),
-      ...(input.maxAttempts !== undefined ? { maxAttempts: input.maxAttempts } : {}),
+      ...(input.maxAttempts !== undefined
+        ? { maxAttempts: input.maxAttempts }
+        : {}),
     })
     .onConflictDoNothing()
     .returning({ id: schema.jobs.id });
@@ -50,12 +63,20 @@ export async function enqueue(deps: ServiceDeps, input: EnqueueInput): Promise<s
  * what makes several workers safe: a job already locked is skipped rather than
  * waited on, so neither worker blocks the other.
  */
-export async function claimNextJob(deps: ServiceDeps, workerId: string): Promise<QueuedJob | null> {
+export async function claimNextJob(
+  deps: ServiceDeps,
+  workerId: string,
+): Promise<QueuedJob | null> {
   return deps.db.transaction(async (tx) => {
     const [candidate] = await tx
       .select({ id: schema.jobs.id })
       .from(schema.jobs)
-      .where(and(eq(schema.jobs.status, "QUEUED"), lte(schema.jobs.runAt, nowOf(deps))))
+      .where(
+        and(
+          eq(schema.jobs.status, "QUEUED"),
+          lte(schema.jobs.runAt, nowOf(deps)),
+        ),
+      )
       .orderBy(schema.jobs.runAt)
       .limit(1)
       .for("update", { skipLocked: true });
@@ -90,10 +111,19 @@ export async function claimNextJob(deps: ServiceDeps, workerId: string): Promise
   });
 }
 
-export async function completeJob(deps: ServiceDeps, jobId: string): Promise<void> {
+export async function completeJob(
+  deps: ServiceDeps,
+  jobId: string,
+): Promise<void> {
   await deps.db
     .update(schema.jobs)
-    .set({ status: "SUCCEEDED", completedAt: nowOf(deps), lockedAt: null, lockedBy: null, lastError: null })
+    .set({
+      status: "SUCCEEDED",
+      completedAt: nowOf(deps),
+      lockedAt: null,
+      lockedBy: null,
+      lastError: null,
+    })
     .where(eq(schema.jobs.id, jobId));
 }
 
@@ -103,7 +133,11 @@ export function retryDelayMs(attempts: number): number {
   return Math.min(base * 2 ** Math.max(0, attempts - 1), 30 * 60_000);
 }
 
-export async function failJob(deps: ServiceDeps, job: QueuedJob, error: string): Promise<"RETRY" | "DEAD"> {
+export async function failJob(
+  deps: ServiceDeps,
+  job: QueuedJob,
+  error: string,
+): Promise<"RETRY" | "DEAD"> {
   const dead = job.attempts >= job.maxAttempts;
   const runAt = new Date(nowOf(deps).getTime() + retryDelayMs(job.attempts));
   await deps.db
@@ -120,12 +154,22 @@ export async function failJob(deps: ServiceDeps, job: QueuedJob, error: string):
 }
 
 /** Jobs left RUNNING by a crashed worker are handed back after the timeout. */
-export async function recoverStuckJobs(deps: ServiceDeps, staleMinutes = 15): Promise<number> {
+export async function recoverStuckJobs(
+  deps: ServiceDeps,
+  staleMinutes = 15,
+): Promise<number> {
   const cutoff = new Date(nowOf(deps).getTime() - staleMinutes * 60_000);
   const rows = await deps.db
     .update(schema.jobs)
-    .set({ status: "QUEUED", lockedAt: null, lockedBy: null, lastError: "recovered from a stale lock" })
-    .where(and(eq(schema.jobs.status, "RUNNING"), lte(schema.jobs.lockedAt, cutoff)))
+    .set({
+      status: "QUEUED",
+      lockedAt: null,
+      lockedBy: null,
+      lastError: "recovered from a stale lock",
+    })
+    .where(
+      and(eq(schema.jobs.status, "RUNNING"), lte(schema.jobs.lockedAt, cutoff)),
+    )
     .returning({ id: schema.jobs.id });
   return rows.length;
 }

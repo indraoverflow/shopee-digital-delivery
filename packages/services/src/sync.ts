@@ -1,6 +1,7 @@
 import { schema } from "@qansa/db";
 import type { ShopeeStore } from "@qansa/db";
 import { and, eq, isNull, notInArray, sql } from "drizzle-orm";
+import { notify } from "./notify.js";
 import { processOrderDetail, type ProcessSummary } from "./orders.js";
 import { getStoreAccess, markStoreError } from "./tokens.js";
 import type { ServiceDeps } from "./types.js";
@@ -22,7 +23,12 @@ export async function createSyncJob(
 ): Promise<string> {
   const [row] = await deps.db
     .insert(schema.syncJobs)
-    .values({ storeId: input.storeId, type: input.type, triggeredBy: input.triggeredBy, status: "QUEUED" })
+    .values({
+      storeId: input.storeId,
+      type: input.type,
+      triggeredBy: input.triggeredBy,
+      status: "QUEUED",
+    })
     .returning({ id: schema.syncJobs.id });
   return row!.id;
 }
@@ -40,7 +46,9 @@ async function finishSyncJob(
       status,
       ...(patchValues.stats ? { stats: patchValues.stats } : {}),
       ...(patchValues.error !== undefined ? { error: patchValues.error } : {}),
-      ...(status === "RUNNING" ? { startedAt: nowOf(deps) } : { finishedAt: nowOf(deps) }),
+      ...(status === "RUNNING"
+        ? { startedAt: nowOf(deps) }
+        : { finishedAt: nowOf(deps) }),
     })
     .where(eq(schema.syncJobs.id, jobId));
 }
@@ -59,7 +67,9 @@ export async function runProductSync(
 
   try {
     const { store, access } = await getStoreAccess(deps, input.storeId);
-    const { products, truncated } = await deps.gateway.listProducts(access, { maxPages: 200 });
+    const { products, truncated } = await deps.gateway.listProducts(access, {
+      maxPages: 200,
+    });
 
     const now = nowOf(deps);
     let created = 0;
@@ -73,7 +83,12 @@ export async function runProductSync(
       const [existing] = await deps.db
         .select({ id: schema.shopeeProducts.id })
         .from(schema.shopeeProducts)
-        .where(and(eq(schema.shopeeProducts.storeId, store.id), eq(schema.shopeeProducts.itemId, product.itemId)))
+        .where(
+          and(
+            eq(schema.shopeeProducts.storeId, store.id),
+            eq(schema.shopeeProducts.itemId, product.itemId),
+          ),
+        )
         .limit(1);
 
       const values = {
@@ -104,7 +119,13 @@ export async function runProductSync(
         const [row] = await deps.db
           .insert(schema.shopeeProducts)
           .values(values)
-          .onConflictDoUpdate({ target: [schema.shopeeProducts.storeId, schema.shopeeProducts.itemId], set: values })
+          .onConflictDoUpdate({
+            target: [
+              schema.shopeeProducts.storeId,
+              schema.shopeeProducts.itemId,
+            ],
+            set: values,
+          })
           .returning({ id: schema.shopeeProducts.id });
         productRowId = row!.id;
         created += 1;
@@ -125,7 +146,10 @@ export async function runProductSync(
             deletedAt: null,
           })
           .onConflictDoUpdate({
-            target: [schema.shopeeVariations.productId, schema.shopeeVariations.modelId],
+            target: [
+              schema.shopeeVariations.productId,
+              schema.shopeeVariations.modelId,
+            ],
             set: {
               name: variation.name,
               sku: variation.sku,
@@ -173,17 +197,42 @@ export async function runProductSync(
 
     await deps.db
       .update(schema.shopeeStores)
-      .set({ lastProductSyncAt: now, status: "CONNECTED", lastError: null, updatedAt: now })
+      .set({
+        lastProductSyncAt: now,
+        status: "CONNECTED",
+        lastError: null,
+        updatedAt: now,
+      })
       .where(eq(schema.shopeeStores.id, store.id));
 
-    const stats: SyncStats = { items: products.length, created, updated, variations, removed, truncated };
+    const stats: SyncStats = {
+      items: products.length,
+      created,
+      updated,
+      variations,
+      removed,
+      truncated,
+    };
     await finishSyncJob(deps, jobId, "SUCCEEDED", { stats, error: null });
     deps.logger.info(stats, "product sync finished");
     return stats;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await finishSyncJob(deps, jobId, "FAILED", { error: message });
-    await markStoreError(deps, input.storeId, `product sync failed: ${message}`);
+    await markStoreError(
+      deps,
+      input.storeId,
+      `product sync failed: ${message}`,
+    );
+    await notify(deps, {
+      type: "sync.failed",
+      title: `Sinkronisasi produk gagal (${message})`,
+      data: {
+        storeId: input.storeId,
+        job: "SYNC_PRODUCTS",
+        error: message.slice(0, 200),
+      },
+    });
     throw error;
   }
 }
@@ -212,7 +261,11 @@ export async function runOrderSync(
     const hours = input.lookbackHours ?? deps.config.orderLookbackHours;
     const from = to - Math.floor(hours * 3600);
 
-    const listed = await deps.gateway.listOrdersByUpdateTime(access, { from, to, maxPages: 40 });
+    const listed = await deps.gateway.listOrdersByUpdateTime(access, {
+      from,
+      to,
+      maxPages: 40,
+    });
     let processed = 0;
     let failed = 0;
     let claimable = 0;
@@ -222,13 +275,21 @@ export async function runOrderSync(
       const details = await deps.gateway.getOrders(access, batch);
       for (const detail of details) {
         try {
-          const summary: ProcessSummary = await processOrderDetail(deps, store as ShopeeStore, detail);
+          const summary: ProcessSummary = await processOrderDetail(
+            deps,
+            store as ShopeeStore,
+            detail,
+          );
           processed += 1;
-          if (summary.state === "FULFILLED" || summary.state === "CLAIMED") claimable += 1;
+          if (summary.state === "FULFILLED" || summary.state === "CLAIMED")
+            claimable += 1;
         } catch (error) {
           failed += 1;
           deps.logger.warn(
-            { orderSn: detail.orderSn, err: error instanceof Error ? error.message : String(error) },
+            {
+              orderSn: detail.orderSn,
+              err: error instanceof Error ? error.message : String(error),
+            },
             "order failed inside a sweep",
           );
         }
@@ -238,7 +299,12 @@ export async function runOrderSync(
     const now = nowOf(deps);
     await deps.db
       .update(schema.shopeeStores)
-      .set({ lastOrderSyncAt: now, status: "CONNECTED", lastError: null, updatedAt: now })
+      .set({
+        lastOrderSyncAt: now,
+        status: "CONNECTED",
+        lastError: null,
+        updatedAt: now,
+      })
       .where(eq(schema.shopeeStores.id, store.id));
 
     const stats: OrderSyncResult = {
@@ -256,11 +322,22 @@ export async function runOrderSync(
     const message = error instanceof Error ? error.message : String(error);
     await finishSyncJob(deps, jobId, "FAILED", { error: message });
     await markStoreError(deps, input.storeId, `order sync failed: ${message}`);
+    await notify(deps, {
+      type: "sync.failed",
+      title: `Sinkronisasi pesanan gagal (${message})`,
+      data: {
+        storeId: input.storeId,
+        job: "SYNC_ORDERS",
+        error: message.slice(0, 200),
+      },
+    });
     throw error;
   }
 }
 
-export async function storesNeedingSync(deps: ServiceDeps): Promise<ShopeeStore[]> {
+export async function storesNeedingSync(
+  deps: ServiceDeps,
+): Promise<ShopeeStore[]> {
   return deps.db
     .select()
     .from(schema.shopeeStores)

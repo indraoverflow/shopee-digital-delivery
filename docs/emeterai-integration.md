@@ -1,84 +1,85 @@
 # e-Meterai delivery
 
-e-Meterai is the one product in the catalogue that cannot be pre-stocked as a static code: the shop
-generates a link per buyer at [e-meterai.co.id](https://e-meterai.co.id), the buyer opens it and stamps
-their own PDF. This note records what is known about that flow, what was verified, and the one blocker
-that stops automation today.
+e-Meterai cannot be pre-stocked as a static code: the shop mints a link per buyer, the buyer opens it
+and stamps their own PDF. This note records the protocol that was verified against the live service on
+2026-11-13, the scripts that drive it, and what is still missing before a buyer receives the link from
+the portal automatically.
 
-## What the site exposes
+This is the dashboard's private API, not a published partner contract. It can change without notice, and
+driving someone else's billing system with it is a business decision, not only a technical one. A
+reseller key from Peruri would be the durable answer; until one exists, this is what works.
 
-The dashboard is a single-page app that talks to its own REST services. Bases taken from the shipped
-bundle:
+## Verified protocol
 
-| Purpose                           | Base                                                                   |
-| --------------------------------- | ---------------------------------------------------------------------- |
-| Login, registration, profile      | `https://backendservice.e-meterai.co.id`                               |
-| Stamping, balance, serial numbers | `https://stampservice.e-meterai.co.id`                                 |
-| Reseller links                    | `https://stampv2.e-meterai.co.id`, `https://inventory.e-meterai.co.id` |
-| File upload                       | `https://fileupload.e-meterai.co.id`                                   |
-
-Endpoints read out of the bundle's path table:
-
-| Action                         | Path                            |
-| ------------------------------ | ------------------------------- |
-| Login                          | `api/users/login`               |
-| Profile / reseller info        | `api/v2/reseller`               |
-| Balance                        | `function/saldopos`             |
-| Generate buyer link (reseller) | `api/v3/reseller/generate-link` |
-| Existing links                 | `reseller/links`                |
-| Serial number                  | `api/v2/serialnumber`           |
-
-Requests carry `Authorization: Bearer <token>` and a `csrf-token` header read from a `csrf-token`
-cookie. That is how the dashboard itself talks to the API; it is not a documented partner API, and
-automating it is a decision about that service's terms, not only about code.
-
-## What was verified, and what failed
-
-`scripts/emeterai-probe.mjs` logs in with the credentials in `/home/apps/.emeterai_login`, prints the
-answer with every token and cookie masked, reads the balance, and stops. It never calls generate-link,
-because that call can spend paid quota.
-
-Run on 2026-11-13, three attempts total, the last one with the full browser header set
-(`Origin`, `Referer`, `Accept-Language`, a Chrome user agent):
+Login is **not** a plain JSON call. The dashboard encrypts its bodies with a static AES key that ships in
+the JavaScript every visitor downloads, and a login without the encryption is refused before the password
+is looked at. That is why `{ email, password }` answered `{"statusCode":"09","result":"Login Failed"}`.
 
 ```
-csrf     http 404  no token                       (/csrf not at the API root)
-login    http 500  {"statusCode":"09","message":"error","result":"Login Failed"}
-login    http 500  same, with browser headers
+cipher   aes-256-cbc
+key      sha256("jediljclksejdwklfjklsjaflkjflkwajkqlwjdsakljflkjfkldasjflkafjdklsafjdklsajfaskljfkdslajfkdsaljfkdsa")
+iv       fixed "p3rUr13m3t3r41kv", or 16 random chars from a printable alphabet
+wire     iv, key and ciphertext as base64, interleaved in four quarters (iv 6 chars, key 11, rest ciphertext)
 ```
 
-No cookie is set by any of the three origins, so there is no CSRF value to fetch before the first
-login, which means the dashboard is not protecting its first call with one either.
+| Call      | Where                                                                                                         | Body                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Login     | `POST https://e-meterai.co.id/api/users/login`                                                                | `{"data": encrypt({ user, password })}` |
+| Balance   | `POST https://e-meterai.co.id/api/function/saldopos`                                                          | `{}`                                    |
+| Mint link | `GET https://e-meterai.co.id/api/v3/reseller/generate-link?data=<encrypt({fullpath:true,qty,partial:false})>` | none                                    |
 
-Two conclusions, stated plainly:
+The answer to a successful login is `{"statusCode":"00","token":"<jwt>","result":"<encrypted>"}`; the
+encrypted part decrypts to the profile, and `token` is used as `Authorization: Bearer` afterwards.
 
-1. The endpoint exists and answers in its own error format, so the request reached the right service and
-   the payload shape is not the problem.
-2. The login was refused three times, the last time with headers identical to a browser. What is left is
-   the credential itself, an extra step the dashboard performs (email OTP, device check), or an account
-   that is not enabled for anything but interactive use. The probe stops here: further attempts risk
-   locking a real account, and none of the remaining causes can be fixed by guessing.
+A mint answers:
 
-## What closes it
+```json
+{
+  "status": "00",
+  "message": "success",
+  "result": {
+    "message": "success generate link reseller sebanyak 1",
+    "linkUrl": ["https://e-meterai.co.id/pdfViewer?refid=<id>="]
+  }
+}
+```
 
-- Confirm in a browser that `/home/apps/.emeterai_login` still signs in. If it does not, update the file
-  and rerun `node scripts/emeterai-probe.mjs`.
-- If it does sign in, capture the login request once from the browser's network panel (field names and
-  headers) and the adapter can be written against the real shape instead of a guess.
-- If the account is a reseller or wholesale account, ask for the documented API and its key: an
-  integration built on a published contract is worth more than one built on the dashboard's private
-  endpoints.
+`linkUrl` is already an absolute URL; that is what the buyer opens. Each call spends one unit of the
+account's balance, so it is never called by a test, a smoke run or a preflight.
 
-## Until then
+Only two hosts serve these paths: `https://e-meterai.co.id` and `https://inventory.e-meterai.co.id`.
+`backendservice`, `stampv2` and `stampservice` 404 the same paths, which is worth knowing before
+re-deriving them.
 
-The shop can keep generating links by hand. The platform already delivers a per-order link: create the
-digital product with `deliveryKind = LINK` and `externalUrl`, map the Shopee variation to it, and the
-buyer receives the link in the portal after verification. One link per product is enough when the shop
-issues the same template, and insufficient when each buyer needs a unique link, which is the case for
-stamping a specific PDF. That gap is the reason the automation above is worth finishing.
+## Scripts
 
-## Environment
+| Script                            | Does                                                    | Spends             |
+| --------------------------------- | ------------------------------------------------------- | ------------------ |
+| `scripts/emeterai-crypto.mjs`     | the cipher, encrypt and decrypt, with a round-trip test | no                 |
+| `scripts/emeterai-probe.mjs`      | login, who the account is, balance                      | no                 |
+| `scripts/emeterai-paths.mjs`      | which host serves which path                            | no                 |
+| `scripts/emeterai-readonly.mjs`   | a short list of read-only GETs                          | no                 |
+| `scripts/emeterai-mint.mjs [qty]` | mints one buyer link and prints the URL                 | **yes, qty units** |
 
-The credentials file is read by the probe only, never by the API or the worker, and it is not committed.
-If automation is enabled later, the credentials belong in the settings table encrypted with
-`APP_ENCRYPTION_KEY`, the same way Shopee tokens are, and the session token must never be logged.
+The credentials file may be either `email=...` / `password=...` lines or a captured
+`curl ... --data '{"data":"<blob>"}'` from the browser; both are accepted, because the blob is encrypted
+with the same static key and decrypts back to the credentials. Nothing is printed either way.
+
+## What the shop does today, and what is missing
+
+Today: the operator runs `node scripts/emeterai-mint.mjs 1`, copies the printed `pdfViewer` URL, and
+sends it to the buyer by hand. That works and is already better than clicking through the dashboard.
+
+Missing, and deliberately not half-built: minting inside the fulfilment pipeline. The design is small and
+fits what exists:
+
+1. A credential block in settings, encrypted with `APP_ENCRYPTION_KEY` the way Shopee tokens are.
+2. `fulfillments.minted_secret_enc` (plus `minted_at`), written once per fulfilment.
+3. `accessDelivery` serves the minted value when present, and only falls back to the code pool otherwise.
+4. An operator action "Buat tautan" that mints for one fulfilment and records the audit row, with
+   idempotency so a retry never mints twice and never pays twice.
+5. A failed mint is an `OUT_OF_STOCK`-class failure: tell the buyer support will follow up, notify the
+   operator, and do not retry automatically, because each attempt costs money.
+
+Until that lands, the manual step above is the honest state, and it is written here so nobody assumes the
+portal already mints.

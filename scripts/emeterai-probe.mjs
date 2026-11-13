@@ -1,168 +1,144 @@
 #!/usr/bin/env node
 /**
- * One-shot discovery against the e-Meterai dashboard API.
+ * Read-only probe of the e-Meterai dashboard API.
  *
- * It answers one question honestly: can this account be driven from a server, and
- * what does the login answer look like? It logs in, reads the balance, and stops
- * there. It does not create a link or buy anything, because a generate-link call can
- * consume a paid quota and that decision belongs to the operator.
+ * The dashboard encrypts its own request bodies, so a plain JSON login is refused
+ * before the password is looked at. This signs in the way the site does, says who the
+ * account is and what it can see, and stops.
  *
- * Output masks every token, cookie and email domain, so the transcript can be
- * pasted into an issue or a chat without handing out a session.
+ * It never calls generate-link: that call can spend paid quota, and spending it is the
+ * operator's decision, not a script's.
  *
- * Usage: node scripts/emeterai-probe.mjs [path-to-credentials]
- * Credentials file: two lines, `email=...` and `password=...`.
+ * Usage: node scripts/emeterai-probe.mjs [credentials-file]
+ * Credentials file: `email=...` and `password=...` lines.
  */
 import { readFile } from "node:fs/promises";
+import { decryptToObject, encrypt } from "./emeterai-crypto.mjs";
 
 const CREDENTIALS = process.argv[2] ?? "/home/apps/.emeterai_login";
-const LOGIN_BASE = "https://backendservice.e-meterai.co.id";
-const STAMP_BASE = "https://stampservice.e-meterai.co.id";
+const ORIGIN = "https://e-meterai.co.id";
+const API = "https://backendservice.e-meterai.co.id";
 
-function mask(value) {
-  if (typeof value !== "string" || value.length === 0) return value;
-  if (value.length <= 8) return "*".repeat(value.length);
-  return `${value.slice(0, 4)}...${value.slice(-4)} (${value.length} chars)`;
-}
-
-function maskEmail(email) {
+const mask = (value) =>
+  value
+    ? `${String(value).slice(0, 4)}...${String(value).slice(-4)} (${String(value).length})`
+    : value;
+const maskEmail = (email) => {
   const [name, domain] = String(email).split("@");
-  return `${name?.slice(0, 2) ?? ""}***@${domain ? `${domain.slice(0, 3)}***` : "***"}`;
-}
+  return `${name?.slice(0, 2) ?? ""}***@${domain?.slice(0, 3) ?? ""}***`;
+};
 
-async function readCredentials(path) {
+/**
+ * Two shapes are accepted, because the owner may keep either:
+ *   email=... / password=...
+ *   a captured `curl ... --data '{"data":"<blob>"}'` from the browser
+ * The blob is encrypted with the same static key the site ships, so it decrypts back to
+ * the credentials. Nothing is printed either way.
+ */
+async function credentials(path) {
   const raw = await readFile(path, "utf8");
-  const entries = new Map();
+
+  const blob = raw.match(/"data"\s*:\s*"([^"]+)"/)?.[1];
+  if (blob) {
+    const inside = decryptToObject(blob);
+    const email = inside?.email ?? inside?.user ?? inside?.username;
+    const password = inside?.password;
+    if (email && password) return { email, password, source: "captured curl" };
+    throw new Error(
+      `${path} has a data blob that did not decrypt to email/password`,
+    );
+  }
+
+  const map = new Map();
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("curl"))
+      continue;
     const at = trimmed.indexOf("=");
     if (at === -1) continue;
-    entries.set(
+    map.set(
       trimmed.slice(0, at).trim().toLowerCase(),
       trimmed.slice(at + 1).trim(),
     );
   }
-  const email = entries.get("email") ?? entries.get("username");
-  const password = entries.get("password");
+  const email = map.get("email") ?? map.get("username");
+  const password = map.get("password");
   if (!email || !password)
     throw new Error(`${path} must contain email= and password= lines`);
   return { email, password };
 }
 
-function safeJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text.slice(0, 400);
-  }
-}
+const browserHeaders = {
+  "content-type": "application/json",
+  accept: "application/json, text/plain, */*",
+  origin: ORIGIN,
+  referer: `${ORIGIN}/`,
+  "user-agent":
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+};
 
-function scrub(value) {
-  if (Array.isArray(value)) return value.map(scrub);
-  if (value && typeof value === "object") {
-    const out = {};
-    for (const [key, inner] of Object.entries(value)) {
-      if (/token|jwt|csrf|password|secret|session|uspomena/i.test(key))
-        out[key] = mask(String(inner));
-      else out[key] = scrub(inner);
-    }
-    return out;
+function readResult(body) {
+  if (!body || typeof body !== "object" || !body.result) return body;
+  try {
+    return decryptToObject(body.result);
+  } catch {
+    return body.result;
   }
-  return value;
 }
 
 async function main() {
-  const { email, password } = await readCredentials(CREDENTIALS);
-  console.log(`credentials   ${maskEmail(email)} from ${CREDENTIALS}`);
-
-  const jar = new Map();
-  const cookieHeader = () => [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
-  const absorb = (response) => {
-    for (const cookie of response.headers.getSetCookie?.() ?? []) {
-      const [pair] = cookie.split(";");
-      const at = pair.indexOf("=");
-      if (at > 0) jar.set(pair.slice(0, at).trim(), pair.slice(at + 1).trim());
-    }
-  };
-
-  // The dashboard fetches a CSRF token first and sends it back in a `csrf-token`
-  // header, so a login without it is rejected before the password is even considered.
-  const csrfResponse = await fetch(`${LOGIN_BASE}/csrf`, {
-    headers: { accept: "application/json", origin: "https://e-meterai.co.id" },
-  });
-  absorb(csrfResponse);
-  const csrfBody = safeJson(await csrfResponse.text());
-  const csrfToken =
-    jar.get("csrf-token") ??
-    (typeof csrfBody === "object" ? (csrfBody?.token ?? null) : null);
+  const { email, password, source } = await credentials(CREDENTIALS);
   console.log(
-    `csrf          http ${csrfResponse.status} ${csrfToken ? "token captured" : "no token"}`,
+    `credentials   ${maskEmail(email)} from ${CREDENTIALS}${source ? ` (${source})` : ""}`,
   );
 
-  // Everything a browser would send with that call. The Origin and Referer are the
-  // cheapest thing a server-side probe usually forgets, and the only difference
-  // worth one more attempt before asking the owner for a captured request.
-  const headers = {
-    "content-type": "application/json",
-    accept: "application/json, text/plain, */*",
-    "accept-language": "id-ID,id;q=0.9,en;q=0.8",
-    origin: "https://e-meterai.co.id",
-    referer: "https://e-meterai.co.id/",
-    "user-agent":
-      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    ...(csrfToken ? { "csrf-token": String(csrfToken) } : {}),
-    ...(cookieHeader() ? { cookie: cookieHeader() } : {}),
-  };
-
-  // The dashboard sends { email, password }; a 400 tells us the field names differ.
-  const login = await fetch(`${LOGIN_BASE}/api/users/login`, {
+  const login = await fetch(`${ORIGIN}/api/users/login`, {
     method: "POST",
-    headers,
-    body: JSON.stringify({ email, password }),
+    headers: browserHeaders,
+    // The dashboard signs in with { user, password }, not { email, password }; the
+    // captured request is the authority here, not intuition.
+    body: JSON.stringify({
+      data: encrypt({ user: email, password }, { randomIv: true }),
+    }),
   });
-  absorb(login);
-  const loginBody = safeJson(await login.text());
-  console.log(`login         http ${login.status} ${login.statusText}`);
+  const body = await login.json().catch(() => ({}));
   console.log(
-    `login body    ${JSON.stringify(scrub(loginBody)).slice(0, 900)}`,
+    `login         http ${login.status} statusCode ${body.statusCode ?? "-"} ${body.message ?? ""}`,
   );
-  if (jar.size > 0) console.log(`cookies       ${[...jar.keys()].join(", ")}`);
-
-  const token =
-    (loginBody &&
-      typeof loginBody === "object" &&
-      (loginBody.token ?? loginBody.access_token ?? loginBody?.data?.token)) ||
-    null;
-
-  if (!token) {
+  if (body.statusCode !== "00") {
     console.log(
-      "\nNo token in the answer: the field names or the CSRF requirement differ from the guess.",
-    );
-    console.log(
-      "Nothing further was attempted; no link was created and nothing was purchased.",
+      "login refused; nothing further attempted, no link created, nothing purchased.",
     );
     process.exit(0);
   }
 
-  console.log(`token         ${mask(String(token))}`);
+  const decrypted = readResult(body);
+  const user = decrypted?.result?.data?.login?.user ?? {};
+  const token = body.token ?? decrypted?.result?.data?.login?.token;
+  console.log(
+    `account       ${user.firstName ?? "-"} | role ${user.role ?? "-"} | verified ${user.verify ?? "-"} | accounts ${user.accounts?.length ?? 0}`,
+  );
+  console.log(`token         ${mask(token)}`);
 
-  const authHeaders = {
-    accept: "application/json",
-    authorization: `Bearer ${token}`,
-    origin: "https://e-meterai.co.id",
-  };
-  if (cookieHeader()) authHeaders.cookie = cookieHeader();
+  const auth = { ...browserHeaders, authorization: `Bearer ${token}` };
 
   for (const [label, url] of [
-    ["balance", `${STAMP_BASE}/function/saldopos`],
-    ["profile", `${LOGIN_BASE}/api/v2/reseller`],
+    ["profile", `${API}/api/v2/reseller`],
+    ["balance", `${ORIGIN}/api/function/saldopos`],
+    ["links", `${ORIGIN}/api/reseller/links`],
   ]) {
     try {
-      const response = await fetch(url, { headers: authHeaders });
-      const body = safeJson(await response.text());
+      const response = await fetch(url, { headers: auth });
+      const text = await response.text();
+      let shown = text.slice(0, 240);
+      try {
+        const inner = readResult(JSON.parse(text));
+        shown = JSON.stringify(inner).slice(0, 300);
+      } catch {
+        /* keep the raw slice */
+      }
       console.log(
-        `${label.padEnd(13)} http ${response.status} ${JSON.stringify(scrub(body)).slice(0, 400)}`,
+        `${label.padEnd(13)} http ${response.status} ${shown.replace(/"(token|authorization)":"[^"]+"/gi, '"$1":"***"')}`,
       );
     } catch (error) {
       console.log(

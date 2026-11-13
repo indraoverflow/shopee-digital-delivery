@@ -756,7 +756,9 @@ export async function accessDelivery(
     // The buyer has the product, so Shopee should hear about the shipment now
     // rather than when someone remembers to press a button. Queued, deduped, and
     // never allowed to fail the claim itself.
-    await queueAutoShip(deps, context.order, context.store).catch(() => null);
+    await queueAutoShip(deps, context.order, context.store, "ON_CLAIM").catch(
+      () => null,
+    );
 
     if (completed.value) {
       await notify(deps, {

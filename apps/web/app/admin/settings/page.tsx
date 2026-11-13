@@ -22,6 +22,7 @@ import {
   Input,
   PageHeader,
   Pagination,
+  Select,
   Switch,
   Tabs,
   useToast,
@@ -47,6 +48,7 @@ interface SettingsResponse {
       manualApprovalHours: number;
       autoShipOnClaim: boolean;
       autoShipPrefix: string;
+      autoShipTrigger: "ON_PAYMENT" | "ON_CLAIM";
     };
     sync: {
       productIntervalMinutes: number;
@@ -113,6 +115,7 @@ export default function SettingsPage() {
           manualApprovalHours: Number(form.claim.manualApprovalHours),
           autoShipOnClaim: form.claim.autoShipOnClaim,
           autoShipPrefix: form.claim.autoShipPrefix,
+          autoShipTrigger: form.claim.autoShipTrigger,
         },
         sync: {
           productIntervalMinutes: Number(form.sync.productIntervalMinutes),
@@ -328,6 +331,32 @@ export default function SettingsPage() {
                     label="Aktif"
                   />
                 </div>
+
+                <Field
+                  label="Kapan ditandai dikirim"
+                  hint="Saat pesanan dibayar berarti status langsung Dikirim tanpa menunggu pembeli membuka produk"
+                >
+                  <Select
+                    value={form.claim.autoShipTrigger}
+                    onValueChange={(value) =>
+                      setForm({
+                        ...form,
+                        claim: {
+                          ...form.claim,
+                          autoShipTrigger: value as "ON_PAYMENT" | "ON_CLAIM",
+                        },
+                      })
+                    }
+                    options={[
+                      { value: "ON_PAYMENT", label: "Saat pesanan dibayar" },
+                      {
+                        value: "ON_CLAIM",
+                        label: "Saat pembeli membuka produk",
+                      },
+                    ]}
+                    disabled={!editable || !form.claim.autoShipOnClaim}
+                  />
+                </Field>
 
                 <Field
                   label="Awalan nomor resi"

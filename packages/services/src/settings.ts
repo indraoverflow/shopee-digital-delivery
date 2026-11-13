@@ -39,6 +39,12 @@ export interface ClaimSettings {
   autoShipOnClaim: boolean;
   /** Prefix for the resi the platform assigns when it ships on the buyer's behalf. */
   autoShipPrefix: string;
+  /**
+   * When to hand the shipment to Shopee. A digital order is delivered the moment
+   * it is paid ("ON_PAYMENT", the default for a shop that treats the portal as the
+   * delivery), or once the buyer actually takes the product ("ON_CLAIM").
+   */
+  autoShipTrigger: "ON_PAYMENT" | "ON_CLAIM";
 }
 
 /**
@@ -85,6 +91,7 @@ export const DEFAULT_SETTINGS: AllSettings = {
     manualApprovalHours: 24,
     autoShipOnClaim: true,
     autoShipPrefix: "DIGITAL-",
+    autoShipTrigger: "ON_PAYMENT",
   },
   sync: {
     productIntervalMinutes: 30,

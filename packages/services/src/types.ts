@@ -35,4 +35,5 @@ export interface ServiceDeps {
   now?: () => Date;
 }
 
-export const nowOf = (deps: ServiceDeps): Date => (deps.now ? deps.now() : new Date());
+export const nowOf = (deps: ServiceDeps): Date =>
+  deps.now ? deps.now() : new Date();

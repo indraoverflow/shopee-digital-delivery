@@ -37,6 +37,25 @@ afterEach(async () => {
   tempDir = undefined;
 });
 
+/** Overwrite one claim setting without disturbing the rest of the row. */
+async function setClaimSettings(patchValue: Record<string, unknown>) {
+  const [row] = await h!.db.db
+    .select()
+    .from(schema.systemSettings)
+    .where(eq(schema.systemSettings.key, "claim"));
+  const merged = {
+    ...((row?.value as Record<string, unknown>) ?? {}),
+    ...patchValue,
+  };
+  await h!.db.db
+    .insert(schema.systemSettings)
+    .values({ key: "claim", value: merged })
+    .onConflictDoUpdate({
+      target: schema.systemSettings.key,
+      set: { value: merged },
+    });
+}
+
 /** A paid order with one mapped product, ready to claim. */
 async function paidOrder(
   options: {
@@ -279,6 +298,9 @@ describe("accessDelivery", () => {
     const { order, fulfillment } = await paidOrder({
       codes: ["CODE-SHIP-1111"],
     });
+    // This test is about the claim trigger; the default fires on payment instead.
+    await setClaimSettings({ autoShipTrigger: "ON_CLAIM" });
+    await h!.db.db.delete(schema.jobs);
     const verified = await verifyClaim(h!.deps, {
       orderSn: order.orderSn,
       buyerUsername: "rina_kurnia",
@@ -307,13 +329,8 @@ describe("accessDelivery", () => {
     const { order, fulfillment } = await paidOrder({
       codes: ["CODE-SHIP-2222"],
     });
-    await h!.db.db
-      .insert(schema.systemSettings)
-      .values({ key: "claim", value: { autoShipOnClaim: false } })
-      .onConflictDoUpdate({
-        target: schema.systemSettings.key,
-        set: { value: { autoShipOnClaim: false } },
-      });
+    await setClaimSettings({ autoShipOnClaim: false });
+    await h!.db.db.delete(schema.jobs);
     const verified = await verifyClaim(h!.deps, {
       orderSn: order.orderSn,
       buyerUsername: "rina_kurnia",

@@ -175,10 +175,13 @@ do it for you:
   `non_integrated` according to what that channel actually asks for, and never guesses. A channel that
   cannot be arranged through the API is reported as such instead of a generic failure.
 - **Tandai dikirim otomatis** (Settings → Klaim, on by default) removes the button from the flow
-  entirely: the moment the buyer reveals the product, a `SHIP_ORDER` job is queued with the resi
-  `<prefix><order_sn>` (default `DIGITAL-`), and the worker calls Shopee. The claim never waits on
-  Shopee and never fails because of it; the job is deduped per order, so revealing five items ships once,
-  and a Shopee refusal lands in the dead-letter queue where Monitoring shows it.
+  entirely. It queues a `SHIP_ORDER` job with the resi `<prefix><order_sn>` (default `DIGITAL-`), and the
+  worker calls Shopee. Two triggers, because "digital" means different things per shop:
+  `ON_PAYMENT` (default) ships as soon as the order is paid and its product is deliverable, which is what
+  a shop that treats the portal as the delivery wants, and `ON_CLAIM` ships once the buyer actually opens
+  the product. An order whose listing is not mapped yet waits, because nothing could be collected from it. Nothing else in
+  the flow waits on Shopee, and a Shopee refusal lands in the dead-letter queue where Monitoring shows it.
+  The job is deduped per order, so five items in one order ship once.
 - A shop on a channel that requires no shipping at all needs none of this.
 - Every shipment, manual or automatic, is recorded as a `SHIP_CONFIRMED` order event carrying the resi,
   and in the audit log with `actorType` `ADMIN` or `SYSTEM`, so "why is this order shipped" always has

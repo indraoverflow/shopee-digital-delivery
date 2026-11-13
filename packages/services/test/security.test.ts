@@ -408,13 +408,11 @@ describe("console users", () => {
     h = await harness([]);
     const ownerUser = await makeUser("owner@qansa.web.id", "OWNER");
     const target = await makeUser("ops@qansa.web.id", "OPERATOR");
-    await h.db.db
-      .insert(schema.sessions)
-      .values({
-        userId: target.id,
-        tokenHash: "hash-2",
-        expiresAt: new Date(FIXED_NOW.getTime() + 3600_000),
-      });
+    await h.db.db.insert(schema.sessions).values({
+      userId: target.id,
+      tokenHash: "hash-2",
+      expiresAt: new Date(FIXED_NOW.getTime() + 3600_000),
+    });
 
     const result = await resetUserPassword(h.deps, target.id, {
       id: ownerUser.id,
@@ -571,13 +569,11 @@ describe("key rotation", () => {
         status: "ACTIVE",
       })
       .returning();
-    await h.db.db
-      .insert(schema.digitalProductCodes)
-      .values({
-        digitalProductId: product!.id,
-        secretEnc: encryptSecret("CODE-ROTATE-1", KEY),
-        label: "****TE-1",
-      });
+    await h.db.db.insert(schema.digitalProductCodes).values({
+      digitalProductId: product!.id,
+      secretEnc: encryptSecret("CODE-ROTATE-1", KEY),
+      label: "****TE-1",
+    });
 
     const result = await rotateEncryptionKey(h.deps, { oldKey: KEY, newKey });
     expect(result.shopeeTokens).toBe(1);

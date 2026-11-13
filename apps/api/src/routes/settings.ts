@@ -35,6 +35,7 @@ const settingsSchema = z.object({
       manualApprovalHours: z.coerce.number().int().min(1).max(168),
       autoShipOnClaim: z.boolean(),
       autoShipPrefix: z.string().trim().max(24),
+      autoShipTrigger: z.enum(["ON_PAYMENT", "ON_CLAIM"]),
     })
     .partial()
     .optional(),

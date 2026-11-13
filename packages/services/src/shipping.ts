@@ -186,7 +186,16 @@ export async function markShipped(
 const AWAITING_SHIPMENT_STATUSES = ["READY_TO_SHIP", "PROCESSED"];
 
 /**
- * Queue the shipment for an order the buyer has just taken.
+ * Order states where a shipment is legitimate. VALIDATED is excluded on purpose: it
+ * means paid but nothing mapped yet, so the buyer cannot collect anything and
+ * shipping would only start Shopee's delivery clock on an undeliverable order. The
+ * reconcile after mapping picks it up.
+ */
+const SHIPPABLE_ORDER_STATES = ["FULFILLED", "CLAIMED", "COMPLETED"];
+
+/**
+ * Queue the shipment for an order, at the point the shop chose: the moment it is
+ * paid, or the moment the buyer takes the product.
  *
  * The queue is deliberate: a Shopee hiccup must never fail a claim the buyer has
  * already completed, and a retry is the right answer to a timeout. The job is
@@ -194,11 +203,20 @@ const AWAITING_SHIPMENT_STATUSES = ["READY_TO_SHIP", "PROCESSED"];
  */
 export async function queueAutoShip(
   deps: ServiceDeps,
-  order: { id: string; orderSn: string; shopeeStatus: string | null },
+  order: {
+    id: string;
+    orderSn: string;
+    shopeeStatus: string | null;
+    state: string;
+  },
   store: { id: string },
+  trigger: "ON_PAYMENT" | "ON_CLAIM" = "ON_CLAIM",
 ): Promise<string | null> {
   const settings = await loadSettings(deps);
   if (!settings.claim.autoShipOnClaim) return null;
+  // One point in the flow owns the decision; the other must stay silent.
+  if (settings.claim.autoShipTrigger !== trigger) return null;
+  if (!SHIPPABLE_ORDER_STATES.includes(order.state)) return null;
 
   const status = (order.shopeeStatus ?? "").toUpperCase();
   if (!AWAITING_SHIPMENT_STATUSES.includes(status)) return null;
@@ -210,7 +228,7 @@ export async function queueAutoShip(
       orderSn: order.orderSn,
       storeId: store.id,
       trackingNumber: `${settings.claim.autoShipPrefix}${order.orderSn}`,
-      reason: "claim",
+      reason: trigger === "ON_PAYMENT" ? "payment" : "claim",
     },
     dedupeKey: `ship:${order.id}`,
   });

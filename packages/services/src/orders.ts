@@ -11,8 +11,12 @@ import {
   type OrderState,
 } from "@qansa/core";
 import { schema, type Order, type ShopeeStore } from "@qansa/db";
-import type { NormalisedOrder, NormalisedOrderItem } from "@qansa/shopee-adapter";
+import type {
+  NormalisedOrder,
+  NormalisedOrderItem,
+} from "@qansa/shopee-adapter";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { queueAutoShip } from "./shipping.js";
 import type { ServiceDeps } from "./types.js";
 import { nowOf } from "./types.js";
 
@@ -45,15 +49,26 @@ async function ensureProductStubs(
   if (ids.length === 0) return new Map();
 
   const existing = await deps.db
-    .select({ id: schema.shopeeProducts.id, itemId: schema.shopeeProducts.itemId })
+    .select({
+      id: schema.shopeeProducts.id,
+      itemId: schema.shopeeProducts.itemId,
+    })
     .from(schema.shopeeProducts)
-    .where(and(eq(schema.shopeeProducts.storeId, store.id), inArray(schema.shopeeProducts.itemId, ids)));
+    .where(
+      and(
+        eq(schema.shopeeProducts.storeId, store.id),
+        inArray(schema.shopeeProducts.itemId, ids),
+      ),
+    );
 
   const byItem = new Map(existing.map((row) => [row.itemId, row.id]));
 
   for (const item of items) {
     if (byItem.has(item.itemId)) continue;
-    const name = typeof item.raw.item_name === "string" ? item.raw.item_name : item.itemName;
+    const name =
+      typeof item.raw.item_name === "string"
+        ? item.raw.item_name
+        : item.itemName;
     const [row] = await deps.db
       .insert(schema.shopeeProducts)
       .values({ storeId: store.id, itemId: item.itemId, name, raw: item.raw })
@@ -66,7 +81,12 @@ async function ensureProductStubs(
       const [again] = await deps.db
         .select({ id: schema.shopeeProducts.id })
         .from(schema.shopeeProducts)
-        .where(and(eq(schema.shopeeProducts.storeId, store.id), eq(schema.shopeeProducts.itemId, item.itemId)))
+        .where(
+          and(
+            eq(schema.shopeeProducts.storeId, store.id),
+            eq(schema.shopeeProducts.itemId, item.itemId),
+          ),
+        )
         .limit(1);
       if (again) byItem.set(item.itemId, again.id);
     }
@@ -94,12 +114,20 @@ async function resolveLines(
   if (shopeeProductIds.length === 0) return [];
 
   const variations = await deps.db
-    .select({ id: schema.shopeeVariations.id, productId: schema.shopeeVariations.productId, modelId: schema.shopeeVariations.modelId })
+    .select({
+      id: schema.shopeeVariations.id,
+      productId: schema.shopeeVariations.productId,
+      modelId: schema.shopeeVariations.modelId,
+    })
     .from(schema.shopeeVariations)
     .where(inArray(schema.shopeeVariations.productId, shopeeProductIds));
 
   const variationByModel = new Map<string, string>();
-  for (const variation of variations) variationByModel.set(`${variation.productId}:${variation.modelId}`, variation.id);
+  for (const variation of variations)
+    variationByModel.set(
+      `${variation.productId}:${variation.modelId}`,
+      variation.id,
+    );
 
   const mappings = await deps.db
     .select({
@@ -111,7 +139,12 @@ async function resolveLines(
       isActive: schema.productMappings.isActive,
     })
     .from(schema.productMappings)
-    .where(and(eq(schema.productMappings.storeId, store.id), inArray(schema.productMappings.shopeeProductId, shopeeProductIds)));
+    .where(
+      and(
+        eq(schema.productMappings.storeId, store.id),
+        inArray(schema.productMappings.shopeeProductId, shopeeProductIds),
+      ),
+    );
 
   const byProduct = new Map<string, MappingCandidate[]>();
   for (const mapping of mappings) {
@@ -129,12 +162,24 @@ async function resolveLines(
   return items.map((item) => {
     const productRowId = productIds.get(item.itemId);
     if (!productRowId) {
-      return { item, itemRowId: "", mappingStatus: "UNMAPPED" as const, digitalProductId: null, quantity: item.quantity, unmappedReason: "PRODUCT_MISSING" };
+      return {
+        item,
+        itemRowId: "",
+        mappingStatus: "UNMAPPED" as const,
+        digitalProductId: null,
+        quantity: item.quantity,
+        unmappedReason: "PRODUCT_MISSING",
+      };
     }
 
     const candidates = byProduct.get(productRowId) ?? [];
-    const variationId = item.modelId ? variationByModel.get(`${productRowId}:${item.modelId}`) : undefined;
-    const outcome = resolveMapping({ itemId: item.itemId, modelId: item.modelId, candidates }, () => variationId);
+    const variationId = item.modelId
+      ? variationByModel.get(`${productRowId}:${item.modelId}`)
+      : undefined;
+    const outcome = resolveMapping(
+      { itemId: item.itemId, modelId: item.modelId, candidates },
+      () => variationId,
+    );
 
     if (outcome.status === "MAPPED") {
       return {
@@ -177,21 +222,37 @@ export async function processOrderDetail(
   store: ShopeeStore,
   detail: NormalisedOrder,
 ): Promise<ProcessSummary> {
-  if (!detail.orderSn) throw AppError.validation("order payload has no order_sn");
+  if (!detail.orderSn)
+    throw AppError.validation("order payload has no order_sn");
 
   const productIds = await ensureProductStubs(deps, store, detail.items);
   const lines = await resolveLines(deps, store, detail.items, productIds);
 
-  const eligibleStatuses = Array.isArray(store.eligibleStatuses) && store.eligibleStatuses.length > 0
-    ? store.eligibleStatuses
-    : DEFAULT_ELIGIBLE_STATUSES;
-  const eligibility = evaluateEligibility({ shopeeStatus: detail.status, eligibleStatuses });
+  const eligibleStatuses =
+    Array.isArray(store.eligibleStatuses) && store.eligibleStatuses.length > 0
+      ? store.eligibleStatuses
+      : DEFAULT_ELIGIBLE_STATUSES;
+  const eligibility = evaluateEligibility({
+    shopeeStatus: detail.status,
+    eligibleStatuses,
+  });
 
-  const digitalProductIds = [...new Set(lines.map((line) => line.digitalProductId).filter((id): id is string => id !== null))];
+  const digitalProductIds = [
+    ...new Set(
+      lines
+        .map((line) => line.digitalProductId)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
   const digitalProducts = digitalProductIds.length
-    ? await deps.db.select().from(schema.digitalProducts).where(inArray(schema.digitalProducts.id, digitalProductIds))
+    ? await deps.db
+        .select()
+        .from(schema.digitalProducts)
+        .where(inArray(schema.digitalProducts.id, digitalProductIds))
     : [];
-  const digitalById = new Map(digitalProducts.map((product) => [product.id, product]));
+  const digitalById = new Map(
+    digitalProducts.map((product) => [product.id, product]),
+  );
 
   const result = await deps.db.transaction(async (tx) => {
     const now = nowOf(deps);
@@ -199,7 +260,12 @@ export async function processOrderDetail(
     const [existingOrder] = await tx
       .select()
       .from(schema.orders)
-      .where(and(eq(schema.orders.storeId, store.id), eq(schema.orders.orderSn, detail.orderSn)))
+      .where(
+        and(
+          eq(schema.orders.storeId, store.id),
+          eq(schema.orders.orderSn, detail.orderSn),
+        ),
+      )
       .limit(1);
 
     // A shipment the operator arranged must not be undone by a stale read. Shopee
@@ -207,7 +273,8 @@ export async function processOrderDetail(
     // discrepancy worth seeing, not a reason to flip the order back.
     const PRE_SHIPMENT = ["UNPAID", "READY_TO_SHIP", "PROCESSED"];
     const regressedShipment =
-      existingOrder?.shopeeStatus === "SHIPPED" && PRE_SHIPMENT.includes(detail.status.toUpperCase());
+      existingOrder?.shopeeStatus === "SHIPPED" &&
+      PRE_SHIPMENT.includes(detail.status.toUpperCase());
     const shopeeStatus = regressedShipment ? "SHIPPED" : detail.status;
 
     const orderValues = {
@@ -231,7 +298,10 @@ export async function processOrderDetail(
     if (existingOrder) {
       const [updated] = await tx
         .update(schema.orders)
-        .set({ ...orderValues, ineligibleReason: eligibility.eligible ? null : eligibility.reason })
+        .set({
+          ...orderValues,
+          ineligibleReason: eligibility.eligible ? null : eligibility.reason,
+        })
         .where(eq(schema.orders.id, existingOrder.id))
         .returning();
       order = updated!;
@@ -245,7 +315,11 @@ export async function processOrderDetail(
     } else {
       const [created] = await tx
         .insert(schema.orders)
-        .values({ ...orderValues, state: "RECEIVED", ineligibleReason: eligibility.eligible ? null : eligibility.reason })
+        .values({
+          ...orderValues,
+          state: "RECEIVED",
+          ineligibleReason: eligibility.eligible ? null : eligibility.reason,
+        })
         .returning();
       order = created!;
     }
@@ -303,15 +377,31 @@ export async function processOrderDetail(
       if (!digital) continue;
 
       const [existing] = await tx
-        .select({ id: schema.fulfillments.id, status: schema.fulfillments.status, claimedAt: schema.fulfillments.claimedAt })
+        .select({
+          id: schema.fulfillments.id,
+          status: schema.fulfillments.status,
+          claimedAt: schema.fulfillments.claimedAt,
+        })
         .from(schema.fulfillments)
-        .where(and(eq(schema.fulfillments.orderItemId, id), eq(schema.fulfillments.digitalProductId, line.digitalProductId)))
+        .where(
+          and(
+            eq(schema.fulfillments.orderItemId, id),
+            eq(schema.fulfillments.digitalProductId, line.digitalProductId),
+          ),
+        )
         .limit(1);
 
       const productReady = digital.status === "ACTIVE";
-      const status = !eligibility.eligible ? "PENDING" : productReady ? "CLAIMABLE" : "PENDING";
-      const failureReason = eligibility.eligible && !productReady ? "PRODUCT_NOT_ACTIVE" : null;
-      const deadline = new Date(now.getTime() + digital.claimExpiryDays * 24 * 3600 * 1000);
+      const status = !eligibility.eligible
+        ? "PENDING"
+        : productReady
+          ? "CLAIMABLE"
+          : "PENDING";
+      const failureReason =
+        eligibility.eligible && !productReady ? "PRODUCT_NOT_ACTIVE" : null;
+      const deadline = new Date(
+        now.getTime() + digital.claimExpiryDays * 24 * 3600 * 1000,
+      );
 
       if (!existing) {
         await tx.insert(schema.fulfillments).values({
@@ -337,24 +427,49 @@ export async function processOrderDetail(
           })
           .where(eq(schema.fulfillments.id, existing.id));
       } else if (existing.status === "REVOKED") {
-        await tx.update(schema.fulfillments).set({ quantity: line.quantity, updatedAt: now }).where(eq(schema.fulfillments.id, existing.id));
+        await tx
+          .update(schema.fulfillments)
+          .set({ quantity: line.quantity, updatedAt: now })
+          .where(eq(schema.fulfillments.id, existing.id));
       }
-
     }
 
     // Revoking: a cancelled order must not keep a live download.
     if (eligibility.revokes) {
       const revokedFulfillments = await tx
         .update(schema.fulfillments)
-        .set({ status: "REVOKED", revokedAt: now, revokeReason: `Shopee status ${detail.status}`, updatedAt: now })
-        .where(and(eq(schema.fulfillments.orderId, order.id), inArray(schema.fulfillments.status, ["PENDING", "CLAIMABLE", "CLAIMED"])))
+        .set({
+          status: "REVOKED",
+          revokedAt: now,
+          revokeReason: `Shopee status ${detail.status}`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(schema.fulfillments.orderId, order.id),
+            inArray(schema.fulfillments.status, [
+              "PENDING",
+              "CLAIMABLE",
+              "CLAIMED",
+            ]),
+          ),
+        )
         .returning({ id: schema.fulfillments.id });
 
       if (revokedFulfillments.length > 0) {
         await tx
           .update(schema.claims)
-          .set({ status: "REVOKED", revokedAt: now, revokeReason: `Shopee status ${detail.status}` })
-          .where(and(eq(schema.claims.orderId, order.id), inArray(schema.claims.status, ["ISSUED", "COMPLETED"])));
+          .set({
+            status: "REVOKED",
+            revokedAt: now,
+            revokeReason: `Shopee status ${detail.status}`,
+          })
+          .where(
+            and(
+              eq(schema.claims.orderId, order.id),
+              inArray(schema.claims.status, ["ISSUED", "COMPLETED"]),
+            ),
+          );
       }
     }
 
@@ -365,13 +480,24 @@ export async function processOrderDetail(
       .from(schema.fulfillments)
       .where(eq(schema.fulfillments.orderId, order.id));
 
-    const allClaimed = orderFulfillments.length > 0 && orderFulfillments.every((row) => row.status === "CLAIMED" || row.status === "REVOKED");
-    const anyClaimed = orderFulfillments.some((row) => row.status === "CLAIMED");
-    const fulfilledNow = orderFulfillments.filter((row) => row.status === "CLAIMABLE").length;
+    const allClaimed =
+      orderFulfillments.length > 0 &&
+      orderFulfillments.every(
+        (row) => row.status === "CLAIMED" || row.status === "REVOKED",
+      );
+    const anyClaimed = orderFulfillments.some(
+      (row) => row.status === "CLAIMED",
+    );
+    const fulfilledNow = orderFulfillments.filter(
+      (row) => row.status === "CLAIMABLE",
+    ).length;
 
     let target: OrderState;
     if (eligibility.revokes) {
-      target = order.state === "COMPLETED" || order.state === "CANCELLED" ? order.state : "CANCELLED";
+      target =
+        order.state === "COMPLETED" || order.state === "CANCELLED"
+          ? order.state
+          : "CANCELLED";
     } else if (!eligibility.eligible) {
       target = ineligibleTargetState(false);
     } else if (anyClaimed && allClaimed) {
@@ -394,7 +520,9 @@ export async function processOrderDetail(
             state: target,
             updatedAt: now,
             ...(target === "VALIDATED" && !order.paidAt ? { paidAt: now } : {}),
-            ...(target === "CLAIMED" && !order.claimedAt ? { claimedAt: now } : {}),
+            ...(target === "CLAIMED" && !order.claimedAt
+              ? { claimedAt: now }
+              : {}),
           })
           .where(eq(schema.orders.id, order.id))
           .returning({ state: schema.orders.state });
@@ -408,7 +536,10 @@ export async function processOrderDetail(
             type: "STATE_CHANGED",
             fromState: previous,
             toState: hop,
-            payload: { shopeeStatus: detail.status, reason: eligibility.reason },
+            payload: {
+              shopeeStatus: detail.status,
+              reason: eligibility.reason,
+            },
           });
           previous = hop;
         }
@@ -452,6 +583,17 @@ export async function processOrderDetail(
     } satisfies ProcessSummary;
   });
 
+  // A digital order counts as delivered once it is paid, so the shipment may leave
+  // for Shopee without waiting for the buyer to collect it. Queued after the
+  // transaction commits, so a Shopee call can never roll back the pipeline.
+  const [fresh] = await deps.db
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.id, result.orderId))
+    .limit(1);
+  if (fresh)
+    await queueAutoShip(deps, fresh, store, "ON_PAYMENT").catch(() => null);
+
   return result;
 }
 
@@ -460,7 +602,11 @@ export async function processOrderDetail(
  * webhook worker: the push tells us an order number, never the details, because
  * a push body is not a source of truth.
  */
-export async function processOrder(deps: ServiceDeps, storeId: string, orderSn: string): Promise<ProcessSummary | null> {
+export async function processOrder(
+  deps: ServiceDeps,
+  storeId: string,
+  orderSn: string,
+): Promise<ProcessSummary | null> {
   const { getStoreAccess } = await import("./tokens.js");
   const { store, access } = await getStoreAccess(deps, storeId);
   const orders = await deps.gateway.getOrders(access, [orderSn]);
@@ -472,7 +618,10 @@ export async function processOrder(deps: ServiceDeps, storeId: string, orderSn: 
 /** Guard used by tests and by the admin "reprocess" action. */
 export function assertClaimableState(state: string): void {
   if (!isClaimableState(state as OrderState)) {
-    throw AppError.conflict("ORDER_NOT_ELIGIBLE", "Pesanan belum memenuhi syarat untuk diklaim");
+    throw AppError.conflict(
+      "ORDER_NOT_ELIGIBLE",
+      "Pesanan belum memenuhi syarat untuk diklaim",
+    );
   }
 }
 
@@ -481,7 +630,12 @@ export async function countUnmappedItems(deps: ServiceDeps): Promise<number> {
     .select({ count: sql<number>`count(*)::int` })
     .from(schema.orderItems)
     .innerJoin(schema.orders, eq(schema.orders.id, schema.orderItems.orderId))
-    .where(and(eq(schema.orderItems.mappingStatus, "UNMAPPED"), eq(schema.orders.state, "VALIDATED")));
+    .where(
+      and(
+        eq(schema.orderItems.mappingStatus, "UNMAPPED"),
+        eq(schema.orders.state, "VALIDATED"),
+      ),
+    );
   return rows[0]?.count ?? 0;
 }
 

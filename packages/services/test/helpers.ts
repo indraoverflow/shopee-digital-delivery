@@ -16,14 +16,24 @@ export interface Harness {
   setNow: (date: Date) => void;
 }
 
-export const silentLogger = { info: () => undefined, warn: () => undefined, error: () => undefined };
+export const silentLogger = {
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+};
 
 /**
  * A store connected through the fixture gateway, with tokens already stored the
  * way the OAuth callback would store them. Everything downstream is the real
  * code path: real SQL, real migrations, real pipeline.
  */
-export async function harness(fixture: FixtureStore[], options: { eligibleStatuses?: string[]; verificationPolicy?: "USERNAME" | "USERNAME_PHONE" } = {}): Promise<Harness> {
+export async function harness(
+  fixture: FixtureStore[],
+  options: {
+    eligibleStatuses?: string[];
+    verificationPolicy?: "USERNAME" | "USERNAME_PHONE";
+  } = {},
+): Promise<Harness> {
   const db = await createTestDatabase();
   let current = new Date(FIXED_NOW);
 
@@ -36,7 +46,9 @@ export async function harness(fixture: FixtureStore[], options: { eligibleStatus
       status: "CONNECTED",
       environment: "SANDBOX",
       verificationPolicy: options.verificationPolicy ?? "USERNAME",
-      ...(options.eligibleStatuses ? { eligibleStatuses: options.eligibleStatuses } : {}),
+      ...(options.eligibleStatuses
+        ? { eligibleStatuses: options.eligibleStatuses }
+        : {}),
     })
     .returning();
 
@@ -74,7 +86,9 @@ export async function harness(fixture: FixtureStore[], options: { eligibleStatus
   };
 }
 
-export function sampleStore(overrides: Partial<FixtureStore> = {}): FixtureStore {
+export function sampleStore(
+  overrides: Partial<FixtureStore> = {},
+): FixtureStore {
   return {
     shopId: 555001,
     shopName: "pixelbloomid",
@@ -86,9 +100,24 @@ export function sampleStore(overrides: Partial<FixtureStore> = {}): FixtureStore
         item_name: "E-Meterai 10.000",
         price: 11500,
         models: [
-          { model_id: 1001, model_name: "1 E-Meterai", price: 11500, stock: 100 },
-          { model_id: 1002, model_name: "5 E-Meterai", price: 55000, stock: 100 },
-          { model_id: 1003, model_name: "10 E-Meterai", price: 105000, stock: 100 },
+          {
+            model_id: 1001,
+            model_name: "1 E-Meterai",
+            price: 11500,
+            stock: 100,
+          },
+          {
+            model_id: 1002,
+            model_name: "5 E-Meterai",
+            price: 55000,
+            stock: 100,
+          },
+          {
+            model_id: 1003,
+            model_name: "10 E-Meterai",
+            price: 105000,
+            stock: 100,
+          },
         ],
       },
     ],
@@ -102,7 +131,14 @@ export function sampleStore(overrides: Partial<FixtureStore> = {}): FixtureStore
         update_time: FIXED_EPOCH - 300,
         total_amount: 55000,
         items: [
-          { item_id: 101, model_id: 1002, item_name: "E-Meterai 10.000", model_name: "5 E-Meterai", quantity: 1, price: 55000 },
+          {
+            item_id: 101,
+            model_id: 1002,
+            item_name: "E-Meterai 10.000",
+            model_name: "5 E-Meterai",
+            quantity: 1,
+            price: 55000,
+          },
         ],
       },
       {
@@ -113,7 +149,16 @@ export function sampleStore(overrides: Partial<FixtureStore> = {}): FixtureStore
         create_time: FIXED_EPOCH - 600,
         update_time: FIXED_EPOCH - 300,
         total_amount: 11500,
-        items: [{ item_id: 101, model_id: 1001, item_name: "E-Meterai 10.000", model_name: "1 E-Meterai", quantity: 1, price: 11500 }],
+        items: [
+          {
+            item_id: 101,
+            model_id: 1001,
+            item_name: "E-Meterai 10.000",
+            model_name: "1 E-Meterai",
+            quantity: 1,
+            price: 11500,
+          },
+        ],
       },
     ],
     ...overrides,
@@ -122,7 +167,13 @@ export function sampleStore(overrides: Partial<FixtureStore> = {}): FixtureStore
 
 export async function createDigitalProduct(
   h: Harness,
-  input: { name: string; kind: "FILE" | "LINK" | "CODE" | "CREDENTIALS" | "INSTRUCTIONS"; externalUrl?: string; maxDeliveries?: number; instructions?: string },
+  input: {
+    name: string;
+    kind: "FILE" | "LINK" | "CODE" | "CREDENTIALS" | "INSTRUCTIONS";
+    externalUrl?: string;
+    maxDeliveries?: number;
+    instructions?: string;
+  },
 ) {
   const [product] = await h.db.db
     .insert(schema.digitalProducts)
@@ -139,7 +190,11 @@ export async function createDigitalProduct(
   return product!;
 }
 
-export async function addCodes(h: Harness, digitalProductId: string, codes: string[]) {
+export async function addCodes(
+  h: Harness,
+  digitalProductId: string,
+  codes: string[],
+) {
   for (const code of codes) {
     await h.db.db.insert(schema.digitalProductCodes).values({
       digitalProductId,
@@ -149,7 +204,15 @@ export async function addCodes(h: Harness, digitalProductId: string, codes: stri
   }
 }
 
-export async function mapVariation(h: Harness, input: { itemId: number; modelId: number | null; digitalProductId: string; multiplier?: number }) {
+export async function mapVariation(
+  h: Harness,
+  input: {
+    itemId: number;
+    modelId: number | null;
+    digitalProductId: string;
+    multiplier?: number;
+  },
+) {
   const [product] = await h.db.db
     .select({ id: schema.shopeeProducts.id })
     .from(schema.shopeeProducts)
@@ -163,7 +226,12 @@ export async function mapVariation(h: Harness, input: { itemId: number; modelId:
     const [variation] = await h.db.db
       .select({ id: schema.shopeeVariations.id })
       .from(schema.shopeeVariations)
-      .where(and(eq(schema.shopeeVariations.productId, product.id), eq(schema.shopeeVariations.modelId, input.modelId)))
+      .where(
+        and(
+          eq(schema.shopeeVariations.productId, product.id),
+          eq(schema.shopeeVariations.modelId, input.modelId),
+        ),
+      )
       .limit(1);
     variationId = variation?.id ?? null;
   }
@@ -184,5 +252,8 @@ export async function mapVariation(h: Harness, input: { itemId: number; modelId:
 import { and, eq } from "drizzle-orm";
 
 function eqItem(storeId: string, itemId: number) {
-  return and(eq(schema.shopeeProducts.storeId, storeId), eq(schema.shopeeProducts.itemId, itemId));
+  return and(
+    eq(schema.shopeeProducts.storeId, storeId),
+    eq(schema.shopeeProducts.itemId, itemId),
+  );
 }

@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, api } from "./api";
 
@@ -12,10 +20,21 @@ export interface AuthUser {
   permissions: string[];
 }
 
+export interface MfaChallenge {
+  mfaRequired: true;
+  challengeToken: string;
+  expiresAt: string;
+}
+
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** Resolves to a challenge when the account needs a second factor. */
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<MfaChallenge | { mfaRequired: false }>;
+  completeMfa: (challengeToken: string, token: string) => Promise<void>;
   logout: () => Promise<void>;
   can: (permission: string) => boolean;
   refresh: () => Promise<void>;
@@ -50,7 +69,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const result = await api.post<{ user: AuthUser }>("/auth/login", { email, password });
+      const result = await api.post<{
+        mfaRequired: boolean;
+        user?: AuthUser;
+        challengeToken?: string;
+        expiresAt?: string;
+      }>("/auth/login", { email, password });
+      if (result.mfaRequired && result.challengeToken) {
+        return {
+          mfaRequired: true as const,
+          challengeToken: result.challengeToken,
+          expiresAt: result.expiresAt ?? "",
+        };
+      }
+      if (result.user) setUser(result.user);
+      router.push("/admin");
+      return { mfaRequired: false as const };
+    },
+    [router],
+  );
+
+  const completeMfa = useCallback(
+    async (challengeToken: string, token: string) => {
+      const result = await api.post<{ user: AuthUser }>("/auth/2fa/challenge", {
+        challengeToken,
+        token,
+      });
       setUser(result.user);
       router.push("/admin");
     },
@@ -63,9 +107,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push("/login");
   }, [router]);
 
-  const can = useCallback((permission: string) => Boolean(user?.permissions.includes(permission)), [user]);
+  const can = useCallback(
+    (permission: string) => Boolean(user?.permissions.includes(permission)),
+    [user],
+  );
 
-  const value = useMemo(() => ({ user, loading, login, logout, can, refresh }), [user, loading, login, logout, can, refresh]);
+  const value = useMemo(
+    () => ({ user, loading, login, completeMfa, logout, can, refresh }),
+    [user, loading, login, completeMfa, logout, can, refresh],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

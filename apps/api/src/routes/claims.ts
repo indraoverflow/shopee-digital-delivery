@@ -5,7 +5,11 @@ import { schema } from "@qansa/db";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { currentUser, requirePermission } from "../auth.js";
 import { paginate, paginationSchema } from "./common.js";
-import { reissueFulfillment, revokeClaim } from "@qansa/services";
+import {
+  mintFulfillmentLink,
+  reissueFulfillment,
+  revokeClaim,
+} from "@qansa/services";
 
 /**
  * Claim operations: history, revocation and reissue. A revoked claim stops every
@@ -103,6 +107,24 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       Number(total?.value ?? 0),
     );
   });
+
+  /**
+   * Mint the per-buyer link for an e-Meterai fulfilment. Idempotent: a second call
+   * returns the stored link, because a mint costs money at the supplier.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/api/admin/fulfillments/:id/mint",
+    { preHandler: write },
+    async (request) => {
+      const user = currentUser(request);
+      const result = await mintFulfillmentLink(ctx.deps, {
+        fulfillmentId: request.params.id,
+        actor: { id: user.id, email: user.email },
+        ip: request.ip,
+      });
+      return { ok: true, ...result };
+    },
+  );
 
   app.get("/api/admin/fulfillments", { preHandler: read }, async (request) => {
     const query = paginationSchema

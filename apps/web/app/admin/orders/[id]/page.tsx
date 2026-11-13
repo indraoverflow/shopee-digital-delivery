@@ -2,7 +2,14 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, RotateCcw, ShieldOff, Truck, Undo2 } from "lucide-react";
+import {
+  ArrowLeft,
+  RotateCcw,
+  ShieldOff,
+  Ticket,
+  Truck,
+  Undo2,
+} from "lucide-react";
 import { ApiError, api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { useAuth } from "@/lib/auth";
@@ -79,6 +86,9 @@ interface OrderDetail {
     claimDeadline: string | null;
     claimedAt: string | null;
     failureReason: string | null;
+    meteraiEnabled: boolean;
+    hasMintedLink: boolean;
+    mintedAt: string | null;
   }>;
   claims: Array<{
     id: string;
@@ -319,6 +329,36 @@ export default function OrderDetailPage({
                       ) : null}
                     </div>
                     <div className="flex items-center gap-2">
+                      {fulfillment.meteraiEnabled ? (
+                        fulfillment.hasMintedLink ? (
+                          <Badge tone="success">
+                            Tautan siap{" "}
+                            {fulfillment.mintedAt
+                              ? formatDateTime(fulfillment.mintedAt)
+                              : ""}
+                          </Badge>
+                        ) : can("order:write") ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            loading={
+                              busy ===
+                              `/admin/fulfillments/${fulfillment.id}/mint`
+                            }
+                            onClick={() =>
+                              void run(
+                                `/admin/fulfillments/${fulfillment.id}/mint`,
+                                {},
+                                "Tautan e-Meterai dibuat",
+                              )
+                            }
+                          >
+                            <Ticket className="h-3.5 w-3.5" /> Buat tautan
+                          </Button>
+                        ) : (
+                          <Badge tone="warning">Tautan belum dibuat</Badge>
+                        )
+                      ) : null}
                       <StatusBadge
                         map={FULFILLMENT_STATUS}
                         value={fulfillment.status}

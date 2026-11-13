@@ -52,6 +52,19 @@ export interface ClaimSettings {
  * point it at a Slack incoming hook, an n8n flow or the WhatsApp gateway, and a
  * failed delivery is logged rather than blocking a claim.
  */
+/**
+ * e-Meterai credentials for minting buyer links. The password is stored encrypted
+ * with APP_ENCRYPTION_KEY, the same way Shopee tokens are: settings live in a JSON
+ * column, and a JSON column is not a place for a plaintext password.
+ */
+export interface MeteraiSettings {
+  enabled: boolean;
+  /** Account user, which is not always the email: the dashboard sends `user`. */
+  user: string;
+  passwordEnc: string | null;
+  baseUrl: string | null;
+}
+
 export interface NotifySettings {
   enabled: boolean;
   webhookUrl: string | null;
@@ -71,6 +84,7 @@ export interface AllSettings {
   claim: ClaimSettings;
   sync: SyncSettings;
   notify: NotifySettings;
+  meterai: MeteraiSettings;
 }
 
 export const DEFAULT_SETTINGS: AllSettings = {
@@ -92,6 +106,12 @@ export const DEFAULT_SETTINGS: AllSettings = {
     autoShipOnClaim: true,
     autoShipPrefix: "DIGITAL-",
     autoShipTrigger: "ON_PAYMENT",
+  },
+  meterai: {
+    enabled: false,
+    user: "",
+    passwordEnc: null,
+    baseUrl: null,
   },
   sync: {
     productIntervalMinutes: 30,
@@ -126,6 +146,7 @@ export async function loadSettings(deps: ServiceDeps): Promise<AllSettings> {
         "claim",
         "sync",
         "notify",
+        "meterai",
       ]),
     );
 
@@ -143,6 +164,7 @@ export async function loadSettings(deps: ServiceDeps): Promise<AllSettings> {
     claim: merge("claim"),
     sync: merge("sync"),
     notify: merge("notify"),
+    meterai: merge("meterai"),
   };
 }
 

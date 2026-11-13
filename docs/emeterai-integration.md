@@ -65,21 +65,38 @@ The credentials file may be either `email=...` / `password=...` lines or a captu
 `curl ... --data '{"data":"<blob>"}'` from the browser; both are accepted, because the blob is encrypted
 with the same static key and decrypts back to the credentials. Nothing is printed either way.
 
-## What the shop does today, and what is missing
+## Minting inside the pipeline
 
-Today: the operator runs `node scripts/emeterai-mint.mjs 1`, copies the printed `pdfViewer` URL, and
-sends it to the buyer by hand. That works and is already better than clicking through the dashboard.
+The design above is implemented.
 
-Missing, and deliberately not half-built: minting inside the fulfilment pipeline. The design is small and
-fits what exists:
+| Piece | Where |
+| --- | --- |
+| Credential block, password encrypted with the app key | Settings -> e-Meterai (`settings.meterai`) |
+| Product marker | `digital_products.meterai_enabled`, a checkbox on the product form |
+| The minted value, written once | `fulfillments.minted_secret_enc`, `minted_at`, `minted_by` |
+| Serving it to the buyer | `accessDelivery` returns it as a `LINK` payload |
+| Operator action | `POST /api/admin/fulfillments/:id/mint`, button "Buat tautan" on the order page |
+| Audit | `METERAI_LINK_MINTED` order event plus `meterai.mint` audit row |
 
-1. A credential block in settings, encrypted with `APP_ENCRYPTION_KEY` the way Shopee tokens are.
-2. `fulfillments.minted_secret_enc` (plus `minted_at`), written once per fulfilment.
-3. `accessDelivery` serves the minted value when present, and only falls back to the code pool otherwise.
-4. An operator action "Buat tautan" that mints for one fulfilment and records the audit row, with
-   idempotency so a retry never mints twice and never pays twice.
-5. A failed mint is an `OUT_OF_STOCK`-class failure: tell the buyer support will follow up, notify the
-   operator, and do not retry automatically, because each attempt costs money.
+Behaviour that matters, all covered by tests:
 
-Until that lands, the manual step above is the honest state, and it is written here so nobody assumes the
-portal already mints.
+- **Idempotent by column, not by hope.** A second call returns the stored link and reports
+  `alreadyMinted: true`; the supplier is not called again, so a retry can never pay twice.
+- **A refusal stores nothing.** A rejected login surfaces as `METERAI_LOGIN_FAILED`, an unconfigured
+  account as `METERAI_DISABLED`, and neither writes a partial row.
+- **The buyer gets one link.** If a meterai product has no minted link yet, `accessDelivery` answers
+  `OUT_OF_STOCK` with "support will follow up" instead of falling back to a shared URL.
+- **Nothing leaks.** The order screen reports `hasMintedLink` and `mintedAt`, never the ciphertext; the
+  settings endpoint reports `hasPassword`, never the password.
+
+The manual script stays useful: `scripts/emeterai-mint.mjs` still mints one link by hand when the portal
+is not the right tool, for example to test a channel before wiring a product.
+
+## Before turning it on in production
+
+1. Settings -> e-Meterai: paste the account user and password, leave the base URL empty, switch it on.
+2. On the product that should mint, tick "Produk e-Meterai". Codes on that product stop being used.
+3. Place one real order and press "Buat tautan"; confirm the buyer sees the `pdfViewer` link and the
+   balance dropped by the ordered quantity.
+4. Decide the failure policy out loud: when a mint fails, an operator has to follow up by hand, because
+   the platform deliberately does not retry a paid call on its own.

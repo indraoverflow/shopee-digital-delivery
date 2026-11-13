@@ -523,10 +523,28 @@ export async function accessDelivery(
       409,
     );
   }
-  if (product.deliveryKind === "LINK" && !product.externalUrl) {
+  if (
+    product.deliveryKind === "LINK" &&
+    !product.externalUrl &&
+    !product.meteraiEnabled
+  ) {
     throw new AppError(
       "PRODUCT_UNAVAILABLE",
       "Tautan produk belum diatur. Hubungi dukungan.",
+      409,
+    );
+  }
+
+  // A minted link belongs to this buyer alone (for e-Meterai, it is worth money), so
+  // it is served instead of the shared product URL or a code from the pool.
+  const mintedUrl = fulfillment.mintedSecretEnc
+    ? decryptSecret(fulfillment.mintedSecretEnc, deps.config.appEncryptionKey)
+    : null;
+
+  if (product.meteraiEnabled && !mintedUrl) {
+    throw new AppError(
+      "OUT_OF_STOCK",
+      "Tautan e-Meterai untuk pesanan ini belum dibuat. Dukungan akan segera menyusulkannya.",
       409,
     );
   }
@@ -605,7 +623,9 @@ export async function accessDelivery(
       const base = { instructions: product.instructions ?? null };
       let payload: DeliveryPayload;
 
-      if (product.deliveryKind === "FILE" && asset) {
+      if (mintedUrl) {
+        payload = { kind: "LINK", url: mintedUrl, ...base };
+      } else if (product.deliveryKind === "FILE" && asset) {
         const ttlMs = settings.claim.downloadTtlMinutes * 60_000;
         const expiresAt = new Date(now.getTime() + ttlMs);
         const signed = signPayload(deps.config.downloadSigningSecret, {

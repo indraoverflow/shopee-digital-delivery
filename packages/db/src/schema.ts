@@ -344,6 +344,12 @@ export const digitalProducts = pgTable(
     claimExpiryDays: integer("claim_expiry_days").notNull().default(30),
     /** How many times one order item may be delivered. */
     maxDeliveries: integer("max_deliveries").notNull().default(3),
+    /**
+     * e-Meterai: the product is not stocked as codes, it is minted per buyer at
+     * e-meterai.co.id and the link costs money. Off by default, because a product
+     * that mints silently is a product that spends silently.
+     */
+    meteraiEnabled: boolean("meterai_enabled").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -558,6 +564,13 @@ export const fulfillments = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokeReason: text("revoke_reason"),
     failureReason: text("failure_reason"),
+    /**
+     * The value minted for this one buyer (for e-Meterai, the pdfViewer link).
+     * Written once: a second mint would cost a second unit of balance.
+     */
+    mintedSecretEnc: text("minted_secret_enc"),
+    mintedAt: timestamp("minted_at", { withTimezone: true }),
+    mintedBy: text("minted_by"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

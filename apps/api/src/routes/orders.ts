@@ -13,7 +13,17 @@ import { enqueue, markShipped } from "@qansa/services";
  * pipeline is the only writer.
  */
 
-const states = ["RECEIVED", "VALIDATED", "FULFILLED", "CLAIMED", "COMPLETED", "INELIGIBLE", "CANCELLED", "EXPIRED", "FAILED"] as const;
+const states = [
+  "RECEIVED",
+  "VALIDATED",
+  "FULFILLED",
+  "CLAIMED",
+  "COMPLETED",
+  "INELIGIBLE",
+  "CANCELLED",
+  "EXPIRED",
+  "FAILED",
+] as const;
 
 export async function orderRoutes(app: FastifyInstance): Promise<void> {
   const { ctx } = app;
@@ -35,20 +45,30 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     const filters = [
       ...(query.storeId ? [eq(schema.orders.storeId, query.storeId)] : []),
       ...(query.state ? [eq(schema.orders.state, query.state)] : []),
-      ...(query.query ? [sql`(${schema.orders.orderSn} ilike ${`%${query.query}%`} or ${schema.orders.buyerUsername} ilike ${`%${query.query}%`})`] : []),
+      ...(query.query
+        ? [
+            sql`(${schema.orders.orderSn} ilike ${`%${query.query}%`} or ${schema.orders.buyerUsername} ilike ${`%${query.query}%`})`,
+          ]
+        : []),
     ];
     const where = filters.length ? and(...filters) : undefined;
 
     const rows = await ctx.db
       .select({ order: schema.orders, storeLabel: schema.shopeeStores.label })
       .from(schema.orders)
-      .innerJoin(schema.shopeeStores, eq(schema.shopeeStores.id, schema.orders.storeId))
+      .innerJoin(
+        schema.shopeeStores,
+        eq(schema.shopeeStores.id, schema.orders.storeId),
+      )
       .where(where)
       .orderBy(desc(schema.orders.syncedAt))
       .limit(query.pageSize)
       .offset((query.page - 1) * query.pageSize);
 
-    const [total] = await ctx.db.select({ value: count() }).from(schema.orders).where(where);
+    const [total] = await ctx.db
+      .select({ value: count() })
+      .from(schema.orders)
+      .where(where);
 
     const orderIds = rows.map((row) => row.order.id);
     const items = orderIds.length
@@ -76,7 +96,9 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       : [];
 
     const itemStats = new Map(items.map((row) => [row.orderId, row]));
-    const fulfillmentStats = new Map(fulfillments.map((row) => [row.orderId, row]));
+    const fulfillmentStats = new Map(
+      fulfillments.map((row) => [row.orderId, row]),
+    );
 
     const data = rows
       .map((row) => ({
@@ -88,99 +110,166 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
         claimable: Number(fulfillmentStats.get(row.order.id)?.claimable ?? 0),
         claimed: Number(fulfillmentStats.get(row.order.id)?.claimed ?? 0),
       }))
-      .filter((row) => (query.mapping === "all" ? true : query.mapping === "unmapped" ? row.unmappedItems > 0 : row.unmappedItems === 0));
+      .filter((row) =>
+        query.mapping === "all"
+          ? true
+          : query.mapping === "unmapped"
+            ? row.unmappedItems > 0
+            : row.unmappedItems === 0,
+      );
 
-    return paginate(data, query.page, query.pageSize, Number(total?.value ?? 0));
+    return paginate(
+      data,
+      query.page,
+      query.pageSize,
+      Number(total?.value ?? 0),
+    );
   });
 
-  app.get<{ Params: { id: string } }>("/api/admin/orders/:id", { preHandler: read }, async (request) => {
-    const [row] = await ctx.db
-      .select({ order: schema.orders, store: schema.shopeeStores })
-      .from(schema.orders)
-      .innerJoin(schema.shopeeStores, eq(schema.shopeeStores.id, schema.orders.storeId))
-      .where(eq(schema.orders.id, request.params.id))
-      .limit(1);
-    if (!row) throw AppError.notFound("Pesanan");
+  app.get<{ Params: { id: string } }>(
+    "/api/admin/orders/:id",
+    { preHandler: read },
+    async (request) => {
+      const [row] = await ctx.db
+        .select({ order: schema.orders, store: schema.shopeeStores })
+        .from(schema.orders)
+        .innerJoin(
+          schema.shopeeStores,
+          eq(schema.shopeeStores.id, schema.orders.storeId),
+        )
+        .where(eq(schema.orders.id, request.params.id))
+        .limit(1);
+      if (!row) throw AppError.notFound("Pesanan");
 
-    const items = await ctx.db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, row.order.id));
-    const fulfillments = await ctx.db
-      .select({ fulfillment: schema.fulfillments, productName: schema.digitalProducts.name, deliveryKind: schema.digitalProducts.deliveryKind })
-      .from(schema.fulfillments)
-      .innerJoin(schema.digitalProducts, eq(schema.digitalProducts.id, schema.fulfillments.digitalProductId))
-      .where(eq(schema.fulfillments.orderId, row.order.id));
-    const claims = await ctx.db.select().from(schema.claims).where(eq(schema.claims.orderId, row.order.id)).orderBy(desc(schema.claims.createdAt));
-    const events = await ctx.db.select().from(schema.orderEvents).where(eq(schema.orderEvents.orderId, row.order.id)).orderBy(desc(schema.orderEvents.createdAt));
-    const deliveries = await ctx.db
-      .select({ log: schema.deliveryLogs, productName: schema.digitalProducts.name })
-      .from(schema.deliveryLogs)
-      .innerJoin(schema.digitalProducts, eq(schema.digitalProducts.id, schema.deliveryLogs.digitalProductId))
-      .where(sql`${schema.deliveryLogs.claimId} in (select id from ${schema.claims} where order_id = ${row.order.id})`)
-      .orderBy(desc(schema.deliveryLogs.createdAt));
+      const items = await ctx.db
+        .select()
+        .from(schema.orderItems)
+        .where(eq(schema.orderItems.orderId, row.order.id));
+      const fulfillments = await ctx.db
+        .select({
+          fulfillment: schema.fulfillments,
+          productName: schema.digitalProducts.name,
+          deliveryKind: schema.digitalProducts.deliveryKind,
+          meteraiEnabled: schema.digitalProducts.meteraiEnabled,
+        })
+        .from(schema.fulfillments)
+        .innerJoin(
+          schema.digitalProducts,
+          eq(schema.digitalProducts.id, schema.fulfillments.digitalProductId),
+        )
+        .where(eq(schema.fulfillments.orderId, row.order.id));
+      const claims = await ctx.db
+        .select()
+        .from(schema.claims)
+        .where(eq(schema.claims.orderId, row.order.id))
+        .orderBy(desc(schema.claims.createdAt));
+      const events = await ctx.db
+        .select()
+        .from(schema.orderEvents)
+        .where(eq(schema.orderEvents.orderId, row.order.id))
+        .orderBy(desc(schema.orderEvents.createdAt));
+      const deliveries = await ctx.db
+        .select({
+          log: schema.deliveryLogs,
+          productName: schema.digitalProducts.name,
+        })
+        .from(schema.deliveryLogs)
+        .innerJoin(
+          schema.digitalProducts,
+          eq(schema.digitalProducts.id, schema.deliveryLogs.digitalProductId),
+        )
+        .where(
+          sql`${schema.deliveryLogs.claimId} in (select id from ${schema.claims} where order_id = ${row.order.id})`,
+        )
+        .orderBy(desc(schema.deliveryLogs.createdAt));
 
-    return {
-      order: row.order,
-      store: {
-        id: row.store.id,
-        label: row.store.label,
-        shopId: row.store.shopId,
-        environment: row.store.environment,
-        verificationPolicy: row.store.verificationPolicy,
-      },
-      items,
-      fulfillments: fulfillments.map((entry) => ({ ...entry.fulfillment, productName: entry.productName, deliveryKind: entry.deliveryKind })),
-      claims,
-      events,
-      deliveries,
-    };
-  });
+      return {
+        order: row.order,
+        store: {
+          id: row.store.id,
+          label: row.store.label,
+          shopId: row.store.shopId,
+          environment: row.store.environment,
+          verificationPolicy: row.store.verificationPolicy,
+        },
+        items,
+        fulfillments: fulfillments.map((entry) => {
+          // The minted secret is encrypted at rest and belongs to the buyer's delivery,
+          // not to the order screen: strip it and report only that it exists.
+          const { mintedSecretEnc, ...rest } = entry.fulfillment;
+          return {
+            ...rest,
+            productName: entry.productName,
+            deliveryKind: entry.deliveryKind,
+            meteraiEnabled: entry.meteraiEnabled,
+            hasMintedLink: Boolean(mintedSecretEnc),
+          };
+        }),
+        claims,
+        events,
+        deliveries,
+      };
+    },
+  );
 
   /** Re-runs the pipeline for one order: the safe way to fix a half-synced order. */
-  app.post<{ Params: { id: string } }>("/api/admin/orders/:id/resync", { preHandler: write }, async (request) => {
-    const [order] = await ctx.db.select().from(schema.orders).where(eq(schema.orders.id, request.params.id)).limit(1);
-    if (!order) throw AppError.notFound("Pesanan");
+  app.post<{ Params: { id: string } }>(
+    "/api/admin/orders/:id/resync",
+    { preHandler: write },
+    async (request) => {
+      const [order] = await ctx.db
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.id, request.params.id))
+        .limit(1);
+      if (!order) throw AppError.notFound("Pesanan");
 
-    const jobId = await enqueue(ctx.deps, {
-      type: "PROCESS_ORDER",
-      payload: { storeId: order.storeId, orderSn: order.orderSn },
-      dedupeKey: `order:${order.storeId}:${order.orderSn}`,
-    });
+      const jobId = await enqueue(ctx.deps, {
+        type: "PROCESS_ORDER",
+        payload: { storeId: order.storeId, orderSn: order.orderSn },
+        dedupeKey: `order:${order.storeId}:${order.orderSn}`,
+      });
 
-    await ctx.audit({
-      actorType: "ADMIN",
-      actorId: request.user?.id ?? null,
-      actorLabel: request.user?.email ?? "admin",
-      action: "order.resync",
-      targetType: "order",
-      targetId: order.id,
-      metadata: { jobId },
-      ip: request.ip,
-    });
+      await ctx.audit({
+        actorType: "ADMIN",
+        actorId: request.user?.id ?? null,
+        actorLabel: request.user?.email ?? "admin",
+        action: "order.resync",
+        targetType: "order",
+        targetId: order.id,
+        metadata: { jobId },
+        ip: request.ip,
+      });
 
-    return { queued: true, jobId };
-  });
+      return { queued: true, jobId };
+    },
+  );
 
   /**
    * Arranges shipment in Shopee for an order the buyer has already collected.
    * Without this, Shopee cancels the unshipped order and refunds a product that
    * was delivered. Operator action, audited, never a side effect of claiming.
    */
-  app.post<{ Params: { id: string }; Body: { trackingNumber?: string } | undefined }>(
-    "/api/admin/orders/:id/ship",
-    { preHandler: write },
-    async (request) => {
-      const user = request.user;
-      const raw = request.body?.trackingNumber;
-      const trackingNumber = typeof raw === "string" ? raw.trim() : null;
-      if (trackingNumber && trackingNumber.length > 64) {
-        throw new AppError("VALIDATION_ERROR", "Nomor resi terlalu panjang (maksimal 64 karakter).", 400);
-      }
-      const result = await markShipped(ctx.deps, {
-        orderId: request.params.id,
-        trackingNumber,
-        actor: { id: user?.id ?? "system", email: user?.email ?? "system" },
-        ip: request.ip,
-      });
-      return { ok: true, ...result };
-    },
-  );
+  app.post<{
+    Params: { id: string };
+    Body: { trackingNumber?: string } | undefined;
+  }>("/api/admin/orders/:id/ship", { preHandler: write }, async (request) => {
+    const user = request.user;
+    const raw = request.body?.trackingNumber;
+    const trackingNumber = typeof raw === "string" ? raw.trim() : null;
+    if (trackingNumber && trackingNumber.length > 64) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "Nomor resi terlalu panjang (maksimal 64 karakter).",
+        400,
+      );
+    }
+    const result = await markShipped(ctx.deps, {
+      orderId: request.params.id,
+      trackingNumber,
+      actor: { id: user?.id ?? "system", email: user?.email ?? "system" },
+      ip: request.ip,
+    });
+    return { ok: true, ...result };
+  });
 }

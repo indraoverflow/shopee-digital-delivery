@@ -15,6 +15,13 @@
       "when": 1794525967485,
       "tag": "0001_two_factor_manual_audit_chain",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794547909327,
+      "tag": "0002_fair_slyde",
+      "breakpoints": true
     }
   ]
 }

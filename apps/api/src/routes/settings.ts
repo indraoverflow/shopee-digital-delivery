@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { encryptSecret } from "@qansa/core";
 import { schema } from "@qansa/db";
 import { count, desc, eq } from "drizzle-orm";
 import { currentUser, requirePermission } from "../auth.js";
@@ -39,6 +40,16 @@ const settingsSchema = z.object({
     })
     .partial()
     .optional(),
+  meterai: z
+    .object({
+      enabled: z.boolean(),
+      user: z.string().trim().max(120),
+      /** Plaintext in, encrypted before it is stored. Never read back to the client. */
+      password: z.string().max(200).optional(),
+      baseUrl: z.string().url().max(200).nullable(),
+    })
+    .partial()
+    .optional(),
   notify: z
     .object({
       enabled: z.boolean(),
@@ -64,8 +75,23 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   const write = requirePermission(ctx, "settings:write");
   const auditRead = requirePermission(ctx, "audit:read");
 
+  /**
+   * The e-Meterai password is encrypted at rest and never sent back: the client only
+   * needs to know whether one is stored.
+   */
+  const publicSettings = (
+    settings: Awaited<ReturnType<typeof loadSettings>>,
+  ) => ({
+    ...settings,
+    meterai: {
+      ...settings.meterai,
+      passwordEnc: undefined,
+      hasPassword: Boolean(settings.meterai.passwordEnc),
+    },
+  });
+
   app.get("/api/admin/settings", { preHandler: read }, async () => {
-    const settings = await loadSettings(ctx.deps);
+    const settings = publicSettings(await loadSettings(ctx.deps));
     return {
       settings,
       defaults: DEFAULT_SETTINGS,
@@ -85,6 +111,20 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       await saveSetting(ctx.deps, key, { ...current[key], ...group });
     }
 
+    if (body.meterai) {
+      const current = await loadSettings(ctx.deps);
+      const { password, ...rest } = body.meterai;
+      // Plaintext in, ciphertext out: the column holds JSON, not secrets.
+      const passwordEnc = password
+        ? encryptSecret(password, ctx.config.service.appEncryptionKey)
+        : current.meterai.passwordEnc;
+      await saveSetting(ctx.deps, "meterai", {
+        ...current.meterai,
+        ...rest,
+        passwordEnc,
+      });
+    }
+
     await ctx.audit({
       actorType: "ADMIN",
       actorId: user.id,
@@ -95,7 +135,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       ip: request.ip,
     });
 
-    return { settings: await loadSettings(ctx.deps) };
+    return { settings: publicSettings(await loadSettings(ctx.deps)) };
   });
 
   app.get(

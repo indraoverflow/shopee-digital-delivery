@@ -61,6 +61,12 @@ interface SettingsResponse {
       secret: string | null;
       events: string[];
     };
+    meterai: {
+      enabled: boolean;
+      user: string;
+      baseUrl: string | null;
+      hasPassword: boolean;
+    };
   };
   gatewayMode: "live" | "fixture";
   environment: string;
@@ -90,6 +96,8 @@ export default function SettingsPage() {
     page: number;
     pageSize: number;
   }>(tab === "audit" ? `/admin/audit-logs?page=${page}&pageSize=20` : null);
+  /** Held in memory only: the API stores it encrypted and never returns it. */
+  const [meteraiPassword, setMeteraiPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<SettingsResponse["settings"] | null>(null);
 
@@ -121,6 +129,16 @@ export default function SettingsPage() {
           productIntervalMinutes: Number(form.sync.productIntervalMinutes),
           orderReconcileMinutes: Number(form.sync.orderReconcileMinutes),
           orderLookbackHours: Number(form.sync.orderLookbackHours),
+        },
+        meterai: {
+          enabled: form.meterai.enabled,
+          user: form.meterai.user,
+          baseUrl: form.meterai.baseUrl?.trim()
+            ? form.meterai.baseUrl.trim()
+            : null,
+          ...(meteraiPassword.trim()
+            ? { password: meteraiPassword.trim() }
+            : {}),
         },
         notify: {
           enabled: form.notify.enabled,
@@ -167,6 +185,7 @@ export default function SettingsPage() {
             { value: "general", label: "Umum & klaim" },
             { value: "sync", label: "Sinkronisasi" },
             { value: "notify", label: "Notifikasi" },
+            { value: "meterai", label: "e-Meterai" },
             { value: "audit", label: "Audit log" },
           ]}
         />
@@ -604,6 +623,127 @@ export default function SettingsPage() {
               <p>
                 Kegagalan pengiriman dicatat di log dan tidak pernah
                 menggagalkan klaim.
+              </p>
+            </div>
+          </SectionCard>
+
+          {editable ? (
+            <div className="lg:col-span-3 flex justify-end">
+              <Button onClick={() => void save()} loading={busy}>
+                <Save className="h-4 w-4" /> Simpan pengaturan
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : tab === "meterai" ? (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <SectionCard
+            className="lg:col-span-2"
+            title="Akun e-Meterai"
+            description="Dipakai untuk membuat satu tautan per pesanan. Password disimpan terenkripsi dan tidak pernah ditampilkan kembali."
+          >
+            {loading || !form ? (
+              <div className="p-5">
+                <SkeletonRows />
+              </div>
+            ) : (
+              <div className="space-y-4 p-5">
+                <div className="flex items-center justify-between rounded-lg bg-canvas px-3 py-2.5 ring-1 ring-inset ring-line">
+                  <div>
+                    <p className="text-[12.5px] font-medium text-ink-800">
+                      Buat tautan otomatis
+                    </p>
+                    <p className="text-[11.5px] text-ink-500">
+                      Nonaktif berarti tautan dibuat manual lewat tombol di
+                      halaman pesanan.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.meterai.enabled}
+                    onCheckedChange={(value) =>
+                      setForm({
+                        ...form,
+                        meterai: { ...form.meterai, enabled: value },
+                      })
+                    }
+                    label="Aktif"
+                  />
+                </div>
+
+                <Field
+                  label="User akun"
+                  hint="Dashboard mengirim field user, bukan email"
+                >
+                  <Input
+                    value={form.meterai.user}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        meterai: { ...form.meterai, user: event.target.value },
+                      })
+                    }
+                    placeholder="nama akun atau email"
+                    disabled={!editable}
+                  />
+                </Field>
+
+                <Field
+                  label="Password"
+                  hint={
+                    form.meterai.hasPassword
+                      ? "Sudah tersimpan. Isi hanya bila ingin mengganti."
+                      : "Belum ada password tersimpan"
+                  }
+                >
+                  <Input
+                    type="password"
+                    value={meteraiPassword}
+                    onChange={(event) => setMeteraiPassword(event.target.value)}
+                    placeholder={
+                      form.meterai.hasPassword ? "••••••••" : "password akun"
+                    }
+                    autoComplete="new-password"
+                    disabled={!editable}
+                  />
+                </Field>
+
+                <Field
+                  label="Base URL"
+                  hint="Kosongkan untuk https://e-meterai.co.id"
+                >
+                  <Input
+                    value={form.meterai.baseUrl ?? ""}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        meterai: {
+                          ...form.meterai,
+                          baseUrl: event.target.value || null,
+                        },
+                      })
+                    }
+                    placeholder="https://e-meterai.co.id"
+                    disabled={!editable}
+                  />
+                </Field>
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="Cara kerja"
+            description="Yang terjadi saat tautan dibuat."
+          >
+            <div className="space-y-2 px-5 py-3 text-[12px] leading-relaxed text-ink-600">
+              <p>1. Login ke akun, ambil token.</p>
+              <p>2. Minta satu tautan untuk kuantitas pesanan itu.</p>
+              <p>
+                3. Tautan disimpan terenkripsi pada fulfilment, sekali saja.
+              </p>
+              <p>
+                Setiap pembuatan memotong saldo. Karena itu tombolnya idempoten:
+                klik kedua mengembalikan tautan yang sama tanpa memotong saldo
+                lagi.
               </p>
             </div>
           </SectionCard>

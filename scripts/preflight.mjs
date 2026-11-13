@@ -228,7 +228,12 @@ async function checkService() {
     password: PASSWORD,
   });
   if (login.status !== 200) {
-    fail("admin login", `${login.status} ${JSON.stringify(login.body)}`);
+    // Status only: the response to an authenticated call is derived from the password,
+    // and printing it is how a probe transcript turns into a credential leak.
+    fail(
+      "admin login",
+      `${login.status}: check ADMIN_EMAIL and ADMIN_PASSWORD`,
+    );
     return;
   }
   if (login.body?.mfaRequired) {
@@ -238,7 +243,7 @@ async function checkService() {
     );
     return;
   }
-  ok("admin login", login.body?.user?.email);
+  ok("admin login", "session issued");
 
   const stores = await call("GET", "/api/admin/stores");
   const connected = (stores.body?.data ?? []).filter(

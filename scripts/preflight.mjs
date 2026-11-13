@@ -177,9 +177,11 @@ function checkEnvironment() {
       ok("SHOPEE_PARTNER_ID", "set");
     else fail("SHOPEE_PARTNER_ID", "unset");
 
-    const partnerKey = env.SHOPEE_PARTNER_KEY ?? "";
-    if (partnerKey.length >= 20)
-      ok("SHOPEE_PARTNER_KEY", `${partnerKey.length} characters`);
+    // Presence only. A length derived from the secret is still the secret crossing into
+    // a log line, which is exactly what the code scanner refuses, and it tells the
+    // operator nothing they cannot see in their own .env.
+    if ((env.SHOPEE_PARTNER_KEY ?? "").trim().length >= 20)
+      ok("SHOPEE_PARTNER_KEY", "set");
     else fail("SHOPEE_PARTNER_KEY", "missing or a placeholder");
 
     if (env.SHOPEE_ENV === "production") ok("SHOPEE_ENV", "production");

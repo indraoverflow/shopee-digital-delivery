@@ -33,12 +33,12 @@ ingress:
       httpHostHeader: sandbox-api.example.com
 
   - hostname: claim.example.com
-    service: http://web:3300
+    service: http://web:3000
     originRequest:
       httpHostHeader: claim.example.com
 
   - hostname: admin.example.com
-    service: http://web:3300
+    service: http://web:3000
     originRequest:
       httpHostHeader: admin.example.com
 

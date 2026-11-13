@@ -56,8 +56,8 @@ already running on the same compose network:
 | ----------- | -------- | ------------------------- |
 | api         | example.com | `http://api:4000`         |
 | sandbox-api | example.com | `http://api-sandbox:4000` |
-| claim       | example.com | `http://web:3300`         |
-| admin       | example.com | `http://web:3300`         |
+| claim       | example.com | `http://web:3000`         |
+| admin       | example.com | `http://web:3000`         |
 
 If you prefer the tunnel to be defined in git instead of the dashboard, use
 `docker/cloudflared/config.example.yml` with a credentials file, same as

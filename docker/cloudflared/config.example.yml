@@ -1,0 +1,37 @@
+# Second tunnel: example.com, in its own Cloudflare account.
+#
+# Cloudflare ties a tunnel to one account, and a hostname to the zone that owns it, so a
+# second account means a second cloudflared process, not a second entry in one config.
+# Run this alongside the qansa.web.id tunnel:
+#
+#   docker compose -f docker-compose.yml \
+#     -f docker-compose.cloudflare-tunnel.yml up -d
+#
+# Phase 1, what the Shopee application needs: api.example.com only. The claim and admin
+# hostnames are listed because they cost nothing once the tunnel exists, but nothing
+# depends on them until CLAIM_ORIGIN and ADMIN_ORIGIN are switched.
+
+tunnel: qansa-delivery-serah
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # Shopee pushes and the OAuth callback live here. Machine traffic goes straight to the
+  # API, never through the Next.js proxy: a slow render must not be able to time out a
+  # webhook Shopee will not resend forever.
+  - hostname: api.example.com
+    service: http://api:4000
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: api.example.com
+
+  - hostname: claim.example.com
+    service: http://web:3300
+    originRequest:
+      httpHostHeader: claim.example.com
+
+  - hostname: admin.example.com
+    service: http://web:3300
+    originRequest:
+      httpHostHeader: admin.example.com
+
+  - service: http_status:404

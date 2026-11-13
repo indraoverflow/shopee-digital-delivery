@@ -247,6 +247,7 @@ key. Threat model and residual gaps in [`docs/security.md`](docs/security.md).
 - [`docs/deployment.md`](docs/deployment.md) — compose, domains, backups, upgrades
 - [`docs/production-readiness-report.md`](docs/production-readiness-report.md) — audit, findings, readiness
 - [`docs/live-shopee-checklist.md`](docs/live-shopee-checklist.md) — the ordered path from fixture to live
+- [`docs/domain-runbook.md`](docs/domain-runbook.md) — example.com on a second Cloudflare account, and the Shopee application
 - [`docs/remaining-work.md`](docs/remaining-work.md) — what is still open, and how it closes
 - [`docs/saas-tenant-design.md`](docs/saas-tenant-design.md) — multi-tenant SaaS decisions, design only
 - [`docs/troubleshooting.md`](docs/troubleshooting.md) — symptom → cause → fix

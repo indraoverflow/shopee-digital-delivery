@@ -1,0 +1,20 @@
+# Overlay for a second Cloudflare account: example.com.
+#
+# Use with the base compose file, never alone:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflare-tunnel.yml up -d
+#
+# The tunnel is dashboard-managed and identified by its own token, which belongs to the
+# account that owns example.com. Tokens are not portable between accounts: pointing this
+# service at the qansa token produces 1033 errors that look like a DNS problem.
+
+services:
+  cloudflared-serah:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN_SERAH}
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started

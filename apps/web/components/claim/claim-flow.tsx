@@ -19,6 +19,7 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react";
+import Link from "next/link";
 import { ApiError, api } from "@/lib/api";
 import { DELIVERY_KIND, fileSize } from "@/lib/format";
 import { useToast } from "@/components/ui";
@@ -262,9 +263,6 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                     className="mb-1.5 flex items-baseline justify-between text-[13px] font-medium text-ink-700"
                   >
                     <span>Nomor pesanan Shopee</span>
-                    <span className="text-[11px] font-normal text-ink-500">
-                      lihat detail pesanan
-                    </span>
                   </label>
                   <input
                     id="orderSn"
@@ -286,7 +284,13 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                   />
                   <p className="mt-1.5 text-[11.5px] text-ink-500">
                     Ada di halaman Detail Pesanan Shopee, formatnya seperti
-                    260101ABC1234.
+                    260101ABC1234.{" "}
+                    <Link
+                      href="/bantuan"
+                      className="font-medium text-brand-800 underline decoration-line underline-offset-2 hover:text-ink-950"
+                    >
+                      Cara melihatnya
+                    </Link>
                   </p>
                 </div>
 

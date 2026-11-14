@@ -3,19 +3,45 @@ import type { NextRequest } from "next/server";
 import { randomBytes } from "node:crypto";
 
 /**
- * A tiny middleware that:
- * - Generates a CSP nonce for each response
- * - Attaches it to response headers so the CSP can allow inline scripts by nonce
- * - Does nothing else: no auth, no redirect, no rewrite.
- *
- * The nonce is also exposed on `res.headers.get("x-csp-nonce")` for any
- * server component that wants to render it into a script tag, but the
- * current CSP report-only does not yet enforce script-src with nonce.
- * When enforcement starts, change `script-src 'self'` to
- * `script-src 'self' 'nonce-<value>'` and make sure Next's inline bootstrap
- * gets the nonce (see next.config.ts headers).
+ * Single middleware that handles:
+ * - Host-based routing: admin.claim.* vs claim.* hostnames
+ * - CSP nonce generation per response
  */
 export function middleware(request: NextRequest) {
+  // 1. Host-based routing (from old proxy.ts)
+  const host = request.headers.get("host") ?? "";
+  const { pathname } = request.nextUrl;
+
+  const isAdminHost = host.startsWith("admin.");
+  const isClaimHost = host.startsWith("claim.");
+
+  if (!isAdminHost && !isClaimHost) {
+    // 2. CSP nonce for non-routed requests too
+    const nonce = randomBytes(16).toString("base64");
+    const response = NextResponse.next();
+    response.headers.set("x-csp-nonce", nonce);
+    return response;
+  }
+
+  if (isAdminHost && !pathname.startsWith("/admin") && !pathname.startsWith("/login") && !pathname.startsWith("/api") && !pathname.startsWith("/_next")) {
+    const url = request.nextUrl.clone();
+    url.pathname = pathname === "/" ? "/admin" : `/admin${pathname}`;
+    const response = NextResponse.rewrite(url);
+    const nonce = randomBytes(16).toString("base64");
+    response.headers.set("x-csp-nonce", nonce);
+    return response;
+  }
+
+  if (isClaimHost && (pathname.startsWith("/admin") || pathname.startsWith("/login"))) {
+    const url = request.nextUrl.clone();
+    url.pathname = pathname.replace(/^\/admin/, "") || "/";
+    const response = NextResponse.redirect(url);
+    const nonce = randomBytes(16).toString("base64");
+    response.headers.set("x-csp-nonce", nonce);
+    return response;
+  }
+
+  // 2. CSP nonce for all other requests
   const nonce = randomBytes(16).toString("base64");
   const response = NextResponse.next();
   response.headers.set("x-csp-nonce", nonce);

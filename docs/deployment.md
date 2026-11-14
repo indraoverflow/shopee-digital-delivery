@@ -211,20 +211,25 @@ included a destructive migration (none so far; the schema only adds).
 publishes them to GHCR. The server then needs no source tree and no compiler:
 
 ```bash
-IMAGE_TAG=<git sha> docker compose -f docker-compose.pull.yml pull
-IMAGE_TAG=<git sha> docker compose -f docker-compose.pull.yml up -d
+scripts/deploy.sh <git sha>
+scripts/deploy.sh latest
 ```
 
-The tag is the commit sha, not `latest`, so a rollback is the previous value of one variable.
+The override is thin: `docker-compose.pull.yml` only resets the build contexts and names the
+published images, so ports, health checks, volumes and environment keep coming from
+`docker-compose.yml` and the two cannot drift. Compose merges them with
+`-f docker-compose.yml -f docker-compose.pull.yml`, which is what the script runs.
+
+`scripts/deploy.sh` pins the tag to a commit sha (not `latest`), remembers the previous tag in
+`.deploy-tag`, checks `/health` for up to a minute, and redeploys the previous tag if the new one
+does not come up. A deploy that leaves the portal down is worse than the version it replaced.
+
 Measured on this host (4 vCPU): a local rebuild after touching one web file took 117 seconds with a
 warm cache and 380 to 530 seconds cold; pulling the published image is a download.
 
-Two things worth knowing:
-
-- `vendor/shopee-integration` is a git submodule. CI checks it out recursively; a manual clone
-  needs `--recurse-submodules` or the Dockerfile fails on a missing `package.json`.
-- Keep `docker-compose.yml` for local work with build contexts. The pull file mirrors it service
-  for service, so anything changed in one belongs in the other.
+One thing worth knowing: `vendor/shopee-integration` is a git submodule. CI checks it out
+recursively; a manual clone needs `--recurse-submodules` or the Dockerfile fails on a missing
+`package.json`.
 
 ## Key rotation
 

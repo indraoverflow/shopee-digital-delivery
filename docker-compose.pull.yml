@@ -1,119 +1,28 @@
 # Deployment without a compiler on the server.
 #
-#   IMAGE_TAG=<sha> docker compose -f docker-compose.pull.yml pull
-#   IMAGE_TAG=<sha> docker compose -f docker-compose.pull.yml up -d
+#   IMAGE_TAG=<sha> docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
+#   IMAGE_TAG=<sha> docker compose -f docker-compose.yml -f docker-compose.pull.yml up -d
 #
-# Same services as docker-compose.yml, except every application service names a
-# prebuilt image instead of a build context. CI publishes them from main in
-# .github/workflows/images.yml. Pinning IMAGE_TAG to a commit sha is the point:
-# "latest" moves, a sha does not, and a rollback is the previous sha.
+# A thin override rather than a copy of the stack: `build: !reset null` drops the build context
+# declared in docker-compose.yml and `image` names the published one. Ports, health checks,
+# volumes and environment are inherited, so the two files cannot drift apart.
 #
-# Pull needs credentials only while the packages are private:
-#   echo "$GH_TOKEN" | docker login ghcr.io -u indraoverflow --password-stdin
-
-name: qansa-delivery
-
-x-api-image: &api-image ghcr.io/indraoverflow/shopee-digital-delivery/api:${IMAGE_TAG:-latest}
+# CI publishes both images from main in .github/workflows/images.yml. Pin IMAGE_TAG to a commit
+# sha: "latest" moves, a sha does not, and a rollback is the previous sha.
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-qansa}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qansa}
-      POSTGRES_DB: ${POSTGRES_DB:-qansa_delivery}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qansa} -d ${POSTGRES_DB:-qansa_delivery}"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    ports:
-      - "127.0.0.1:${POSTGRES_HOST_PORT:-55433}:5432"
-
   migrate:
-    image: *api-image
-    command: ["node", "apps/api/dist/bootstrap.js"]
-    env_file: [.env]
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER:-qansa}:${POSTGRES_PASSWORD:-qansa}@postgres:5432/${POSTGRES_DB:-qansa_delivery}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
+    build: !reset null
+    image: ghcr.io/indraoverflow/shopee-digital-delivery/api:${IMAGE_TAG:-latest}
 
   api:
-    image: *api-image
-    restart: unless-stopped
-    env_file: [.env]
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER:-qansa}:${POSTGRES_PASSWORD:-qansa}@postgres:5432/${POSTGRES_DB:-qansa_delivery}
-      MIGRATIONS_DIR: /app/migrations
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-    volumes:
-      - uploads:/data/uploads
-    ports:
-      - "127.0.0.1:${API_HOST_PORT:-4000}:4000"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
+    build: !reset null
+    image: ghcr.io/indraoverflow/shopee-digital-delivery/api:${IMAGE_TAG:-latest}
 
   worker:
-    image: *api-image
-    command: ["node", "apps/worker/dist/main.js"]
-    restart: unless-stopped
-    env_file: [.env]
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER:-qansa}:${POSTGRES_PASSWORD:-qansa}@postgres:5432/${POSTGRES_DB:-qansa_delivery}
-      MIGRATIONS_DIR: /app/migrations
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-    volumes:
-      - uploads:/data/uploads
+    build: !reset null
+    image: ghcr.io/indraoverflow/shopee-digital-delivery/api:${IMAGE_TAG:-latest}
 
   web:
+    build: !reset null
     image: ghcr.io/indraoverflow/shopee-digital-delivery/web:${IMAGE_TAG:-latest}
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      PORT: "3000"
-      HOSTNAME: 0.0.0.0
-      API_URL: http://api:4000
-    depends_on:
-      api:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:${WEB_HOST_PORT:-3000}:3000"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/"]
-      interval: 15s
-      timeout: 5s
-      retries: 6
-
-  nginx:
-    image: nginx:1.27-alpine
-    profiles: ["proxy"]
-    restart: unless-stopped
-    volumes:
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on: [api, web]
-    ports:
-      - "8080:80"
-
-volumes:
-  postgres-data:
-  uploads:

@@ -61,14 +61,11 @@ and the operator's own access still works.
 
 ## 6. nginx in the deployed path, or not at all
 
-**LOW**
+**LOW — DONE**
 
-`docker/nginx.conf` carries per-zone rate limits, but the tunnel points at the app ports directly, so
-those limits never run. App-level limits do run (12/min on claim verify, 10/5min on login), so this is
-tidy-up, not a hole.
+`docker/nginx.conf` carried per-zone rate limits, but the tunnel points at the app ports directly, so those limits never ran. App-level limits do run (12/min on claim verify, 10/5min on login).
 
-Closes when: either the tunnel targets nginx and the limits are exercised, or nginx is removed from the
-documented topology so nobody assumes protection that is not there.
+Closed: nginx removed from the documented topology. The Cloudflare Tunnel targets app ports directly. Rate limits live in the app.
 
 ## 7. Resi format accepted by jasa kirim toko
 

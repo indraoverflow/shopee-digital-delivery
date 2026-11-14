@@ -23,6 +23,10 @@ import type { NextConfig } from "next";
  * `style-src` does keep 'unsafe-inline', because React writes inline `style`
  * attributes for layout and a policy needs a nonce to allow those otherwise.
  * The reporting endpoint is same-origin and only writes to the container log.
+ *
+ * When the nonce middleware is stable and the report-only period is over,
+ * change `Content-Security-Policy-Report-Only` to `Content-Security-Policy`
+ * and add `'nonce-<value>'` to `script-src` via the middleware header.
  */
 const CSP_REPORT_ONLY = [
   "default-src 'self'",

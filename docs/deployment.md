@@ -4,7 +4,7 @@
 
 - Docker 24+ with Compose v2, or Node 22 + pnpm 10 + PostgreSQL 15+
 - Three DNS records: `claim.qansa.web.id`, `admin.qansa.web.id`, `api.qansa.web.id`
-- TLS at the edge (Cloudflare tunnel or nginx with certificates)
+- TLS at the edge (Cloudflare tunnel)
 - A Shopee partner account when you switch to live mode
 
 ## Compose stack
@@ -15,7 +15,6 @@ migrate    same image as api, runs bootstrap (migrations + seed) once, exits
 api        Fastify, :4000, healthcheck /health
 worker     same image, different command
 web        Next.js standalone, :3000
-nginx      optional profile "proxy", serves the three hostnames
 ```
 
 ```bash
@@ -42,15 +41,6 @@ sessions when you do.
 | `api.qansa.web.id`   | Fastify      | `/webhook/shopee`, OAuth callback, signed downloads, health |
 
 Both web hosts point at the same container. `proxy.ts` decides by `Host`.
-
-### With the bundled nginx
-
-```bash
-docker compose --profile proxy up -d
-```
-
-nginx listens on `:8080` and routes by `server_name`. Put your tunnel or TLS terminator in front and
-forward `Host` unchanged; the web app relies on it.
 
 ### With a Cloudflare tunnel
 
@@ -279,7 +269,7 @@ empty unless the operators have stable addresses: a wrong entry locks everyone o
 
 | Need                   | Action                                                        |
 | ---------------------- | ------------------------------------------------------------- |
-| More API throughput    | `docker compose up -d --scale api=3` behind nginx (stateless) |
+| More API throughput    | `docker compose up -d --scale api=3` (stateless)             |
 | More worker throughput | `--scale worker=2`; the queue lock keeps them apart           |
 | Slower Shopee          | Raise `ORDER_RECONCILE_MINUTES`; jobs back off on their own   |
 | Disk pressure          | Move `UPLOAD_DIR` to a larger volume; the path is one setting |

@@ -647,17 +647,22 @@ export default function OrderDetailPage({
           <p className="text-[11.5px] text-ink-500">
             Dibuat {mintedLink ? formatDateTime(mintedLink.mintedAt) : "—"}
           </p>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => {
-              if (!mintedLink) return;
-              void navigator.clipboard.writeText(mintedLink.urls.join("\n"));
-              toast({ title: "Tautan disalin" });
-            }}
-          >
-            Salin
-          </Button>
+          {/* With several links, each row carries its own copy button; a sixth one here
+              would look like a different action and copy something the operator did not
+              expect. Single-link orders keep the one button. */}
+          {(mintedLink?.urls.length ?? 0) <= 1 ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                if (!mintedLink) return;
+                void navigator.clipboard.writeText(mintedLink.urls.join("\n"));
+                toast({ title: "Tautan disalin" });
+              }}
+            >
+              Salin
+            </Button>
+          ) : null}
         </div>
       </ConfirmDialog>
 

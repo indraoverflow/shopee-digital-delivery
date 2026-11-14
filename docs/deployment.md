@@ -205,6 +205,27 @@ docker compose up -d api worker web
 Rollback: `git checkout <previous tag>`, rebuild, and restore the database dump if the release
 included a destructive migration (none so far; the schema only adds).
 
+### Upgrading by pulling, not compiling
+
+`.github/workflows/images.yml` builds both images on a GitHub runner for every push to `main` and
+publishes them to GHCR. The server then needs no source tree and no compiler:
+
+```bash
+IMAGE_TAG=<git sha> docker compose -f docker-compose.pull.yml pull
+IMAGE_TAG=<git sha> docker compose -f docker-compose.pull.yml up -d
+```
+
+The tag is the commit sha, not `latest`, so a rollback is the previous value of one variable.
+Measured on this host (4 vCPU): a local rebuild after touching one web file took 117 seconds with a
+warm cache and 380 to 530 seconds cold; pulling the published image is a download.
+
+Two things worth knowing:
+
+- `vendor/shopee-integration` is a git submodule. CI checks it out recursively; a manual clone
+  needs `--recurse-submodules` or the Dockerfile fails on a missing `package.json`.
+- Keep `docker-compose.yml` for local work with build contexts. The pull file mirrors it service
+  for service, so anything changed in one belongs in the other.
+
 ## Key rotation
 
 `APP_ENCRYPTION_KEY` protects `shopee_tokens`, `digital_product_codes` and the 2FA secrets in

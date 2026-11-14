@@ -29,3 +29,8 @@ services:
     # The live api already publishes the host port, so drop the inherited mapping. This
     # service is reached only through the tunnel, over the compose network.
     ports: !reset []
+    # Built once in CI and pulled like everything else. Without this reset the sandbox kept
+    # the inherited build context and was compiled on the server at every deploy, quietly
+    # drifting from the api image it is supposed to mirror.
+    build: !reset null
+    image: ghcr.io/indraoverflow/shopee-digital-delivery/api:${IMAGE_TAG:-latest}

@@ -22,7 +22,7 @@ fi
 # to a network that no longer existed, so every public hostname it serves answered nothing while
 # the api itself was healthy.
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.pull.yml)
-for extra in docker-compose.cloudflare-tunnel.yml; do
+for extra in docker-compose.cloudflare-tunnel.yml docker-compose.shopee-sandbox.yml; do
   [[ -f "$extra" ]] && COMPOSE+=(-f "$extra")
 done
 API_PORT="${API_HOST_PORT:-4000}"

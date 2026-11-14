@@ -12,10 +12,10 @@ import { HelpArticle } from "./help-article";
 export const metadata: Metadata = {
   title: "Cara melihat detail pesanan Shopee",
   description:
-    "Di mana menemukan nomor pesanan, username, dan 4 digit terakhir nomor HP di aplikasi Shopee.",
+    "Di mana menemukan nomor pesanan dan username di aplikasi Shopee.",
 };
 
-const SHOTS = ["nomor-pesanan", "username", "nomor-hp"];
+const SHOTS = ["nomor-pesanan", "username"];
 
 export default function HelpPage() {
   const dir = join(process.cwd(), "public", "bantuan");

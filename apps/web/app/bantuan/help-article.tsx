@@ -49,31 +49,17 @@ const STEPS: Step[] = [
     diagram: "profile",
     keywords: "username akun nama pengguna profil pembeli",
   },
-  {
-    id: "nomor-hp",
-    title: "4 digit terakhir nomor HP",
-    where: "Detail Pesanan → Alamat Pengiriman",
-    body: "Nomor HP di alamat pengiriman ditampilkan tersamar; hanya empat digit terakhir yang terlihat. Itulah empat digit yang diminta portal. Kalau nomor itu sudah tidak aktif, pakai username saja, tidak perlu mencari nomor lamanya.",
-    example: "2250",
-    diagram: "address",
-    keywords: "nomor hp telepon handphone alamat pengiriman 4 digit terakhir",
-  },
 ];
 
 const FAQ = [
   {
-    id: "lupa-salah-satu",
-    q: "Saya lupa salah satu, apakah tetap bisa klaim?",
-    a: "Bisa. Portal menerima username, atau 4 digit terakhir nomor HP. Cukup salah satu, tidak harus dua-duanya.",
-  },
-  {
-    id: "nomor-mati",
-    q: "Nomor HP saya sudah tidak aktif atau sudah ganti",
-    a: "Pakai username saja. Nomor yang tercatat di pesanan tetap nomor lama, jadi jangan bingung kalau nomor Anda sekarang berbeda.",
+    id: "lupa-username",
+    q: "Saya lupa username Shopee saya",
+    a: "Username ada di Shopee → Saya → ketuk foto profil di kiri atas. Itu adalah username akun yang memesan, bukan nama penerima di alamat pengiriman.",
   },
   {
     id: "lupa-dua",
-    q: "Saya lupa username dan nomor lamanya",
+    q: "Saya lupa username dan nomor pesanannya",
     a: "Kirim nomor pesanan dan bukti pembelian ke support@example.com. Kami cocokkan manual, biasanya di hari yang sama pada jam kerja.",
   },
   {
@@ -117,14 +103,14 @@ function Diagram({ kind }: { kind: Step["diagram"] }) {
       ? ["Pesanan Saya", "Detail Pesanan", "Alamat Pengiriman"]
       : kind === "profile"
         ? ["Akun Saya", "Pesanan Saya", "Ubah Profil"]
-        : ["Detail Pesanan", "Alamat Pengiriman", "Nomor HP"];
-  const highlight = kind === "order" ? 1 : kind === "profile" ? 0 : 2;
+        : ["Detail Pesanan", "Alamat Pengiriman"];
+  const highlight = kind === "order" ? 1 : kind === "profile" ? 0 : 1;
   const value =
     kind === "order"
       ? "260101ABC1234"
       : kind === "profile"
         ? "@rina_kurnia"
-        : "********2250";
+        : "Alamat Pengiriman";
 
   return (
     <div className="mt-3 rounded-xl bg-canvas p-3 ring-1 ring-inset ring-line">
@@ -215,10 +201,10 @@ export function HelpArticle({
           Pesanan
         </p>
         <h1 className="mt-1 text-[24px] font-semibold leading-tight tracking-tight text-ink-950">
-          Cara melihat nomor pesanan, username, dan nomor HP
+          Cara melihat nomor pesanan dan username
         </h1>
         <p className="mt-2 text-[14px] leading-relaxed text-ink-600">
-          Hai, ada yang bisa kami bantu? Portal klaim meminta tiga hal supaya
+          Hai, ada yang bisa kami bantu? Portal klaim meminta dua hal supaya
           produk tidak bisa diambil orang lain, dan semuanya ada di aplikasi
           Shopee Anda.
         </p>
@@ -228,7 +214,7 @@ export function HelpArticle({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Cari: nomor pesanan, username, nomor HP"
+            placeholder="Cari: nomor pesanan, username"
             aria-label="Cari di halaman bantuan"
             className="h-11 w-full rounded-lg bg-surface pl-9 pr-3 text-[14px] text-ink-950 ring-1 ring-inset ring-line placeholder:text-ink-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
           />

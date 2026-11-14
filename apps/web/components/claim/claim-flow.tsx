@@ -110,7 +110,6 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
   const [step, setStep] = useState<"form" | "session">("form");
   const [orderSn, setOrderSn] = useState("");
   const [username, setUsername] = useState("");
-  const [phoneSuffix, setPhoneSuffix] = useState("");
   const [session, setSession] = useState<SessionView | null>(null);
   const [deliveries, setDeliveries] = useState<Record<string, Delivery>>({});
   const [busy, setBusy] = useState(false);
@@ -152,7 +151,6 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
       await api.post("/claim/verify", {
         orderSn: orderSn.trim(),
         buyerUsername: username.trim() || undefined,
-        phoneSuffix: phoneSuffix.trim() || undefined,
       });
       await loadSession();
     } catch (caught) {
@@ -319,39 +317,15 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                     className="h-12 w-full rounded-lg bg-canvas px-3.5 text-[15px] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-500 focus:bg-surface focus:ring-2 focus:ring-brand-500"
                   />
                   <p className="mt-1.5 text-[11.5px] text-ink-500">
-                    Cukup salah satu: username atau 4 digit terakhir nomor HP
-                    pada pesanan. Kami mencocokkannya dengan data pembeli,
-                    supaya produk tidak bisa diambil orang lain.
+                    Username yang dipakai akun pemesan, bukan nama penerima di alamat
+                    pengiriman.{" "}
+                    <Link
+                      href="/bantuan"
+                      className="font-medium text-brand-800 underline decoration-line underline-offset-2 hover:text-ink-950"
+                    >
+                      Cara melihatnya
+                    </Link>
                   </p>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="phone"
-                    className="mb-1.5 flex items-baseline justify-between text-[13px] font-medium text-ink-700"
-                  >
-                    <span>4 digit terakhir nomor HP</span>
-                    <span className="text-[11px] font-normal text-ink-500">
-                      kalau username lupa
-                    </span>
-                  </label>
-                  {/* Exactly the four digits the label promises. Six was allowed before and
-                      it was a trap: Shopee masks all but the last four, so a buyer who typed
-                      six could never match, and the field looked broken for no reason. */}
-                  <input
-                    id="phone"
-                    value={phoneSuffix}
-                    onChange={(event) =>
-                      setPhoneSuffix(
-                        event.target.value.replace(/\D/g, "").slice(0, 4),
-                      )
-                    }
-                    maxLength={4}
-                    placeholder="2250"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    className="h-12 w-full rounded-lg bg-canvas px-3.5 text-[15px] tracking-[0.2em] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:tracking-normal placeholder:text-ink-500 focus:bg-surface focus:ring-2 focus:ring-brand-500"
-                  />
                 </div>
               </div>
 
@@ -377,7 +351,7 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                 ) : null}
               </AnimatePresence>
 
-              {error && /^PHONE_|^ORDER_NOT_CLAIMABLE$/.test(error.code) ? (
+              {error && /^ORDER_NOT_CLAIMABLE$/.test(error.code) ? (
                 <div className="mt-4 rounded-xl bg-canvas p-4 ring-1 ring-inset ring-line">
                   {manualState === "sent" ? (
                     <p className="text-[12.5px] leading-relaxed text-ink-700">
@@ -451,8 +425,7 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                 disabled={
                   busy ||
                   orderSn.length < 6 ||
-                  (username.trim().length < 2 &&
-                    phoneSuffix.replace(/\D/g, "").length < 4)
+                  username.trim().length < 2
                 }
                 className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand-700 text-[15px] font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:border disabled:border-dashed disabled:border-ink-300 disabled:bg-surface disabled:text-ink-500"
               >
@@ -461,13 +434,9 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                 {!busy ? <ArrowRight className="h-4 w-4" /> : null}
               </button>
 
-              {!busy &&
-              (orderSn.length < 6 ||
-                (username.trim().length < 2 &&
-                  phoneSuffix.replace(/\D/g, "").length < 4)) ? (
+              {!busy && (orderSn.length < 6 || username.trim().length < 2) ? (
                 <p className="mt-2 text-center text-[11.5px] text-ink-500">
-                  Isi nomor pesanan, lalu username atau 4 digit terakhir nomor
-                  HP.
+                  Isi nomor pesanan dan username Shopee Anda.
                 </p>
               ) : null}
 
@@ -513,7 +482,6 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                   setDeliveries({});
                   setOrderSn("");
                   setUsername("");
-                  setPhoneSuffix("");
                 }}
                 className="mt-1 rounded-lg px-2.5 py-1.5 text-[12px] text-ink-500 ring-1 ring-inset ring-line hover:bg-surface"
               >

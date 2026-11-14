@@ -2,7 +2,13 @@ import { ClaimFlow } from "@/components/claim/claim-flow";
 import { ToastProvider } from "@/components/ui";
 
 interface PublicConfig {
-  branding: { brandName: string; tagline: string; supportEmail: string; supportWhatsapp: string; claimDomain: string };
+  branding: {
+    brandName: string;
+    tagline: string;
+    supportEmail: string;
+    supportWhatsapp: string;
+    claimDomain: string;
+  };
   claim: { sessionMinutes: number };
   gatewayMode: "live" | "fixture";
 }
@@ -13,7 +19,10 @@ interface PublicConfig {
  */
 async function loadConfig(): Promise<PublicConfig | null> {
   try {
-    const response = await fetch(`${process.env.API_URL ?? "http://127.0.0.1:4000"}/api/public/config`, { cache: "no-store" });
+    const response = await fetch(
+      `${process.env.API_URL ?? "http://127.0.0.1:4000"}/api/public/config`,
+      { cache: "no-store" },
+    );
     if (!response.ok) return null;
     return (await response.json()) as PublicConfig;
   } catch {
@@ -26,19 +35,34 @@ export default async function ClaimPortalPage() {
 
   return (
     <main className="relative min-h-dvh overflow-hidden">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-gradient-to-b from-brand-50 via-canvas to-canvas" aria-hidden />
-      <div className="pointer-events-none absolute -left-24 top-24 h-64 w-64 rounded-full bg-brand-100/60 blur-3xl" aria-hidden />
-      <div className="pointer-events-none absolute -right-20 top-64 h-72 w-72 rounded-full bg-amber-100/50 blur-3xl" aria-hidden />
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-gradient-to-b from-brand-50 via-canvas to-canvas"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -left-24 top-24 h-64 w-64 rounded-full bg-brand-100/60 blur-3xl"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -right-20 top-64 h-72 w-72 rounded-full bg-amber-100/50 blur-3xl"
+        aria-hidden
+      />
 
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-10">
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 pt-6 pb-[calc(env(safe-area-inset-bottom)+3rem)] sm:px-6 sm:py-10">
         <header className="mb-10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700 text-[15px] font-semibold text-white">
-              {(config?.branding.brandName ?? "Serah").slice(0, 1).toUpperCase()}
+              {(config?.branding.brandName ?? "Serah")
+                .slice(0, 1)
+                .toUpperCase()}
             </span>
             <div className="leading-tight">
-              <p className="text-[14px] font-semibold text-ink-950">{config?.branding.brandName ?? "Serah Terima"}</p>
-              <p className="text-[11.5px] text-ink-400">{config?.branding.claimDomain ?? "claim.example.com"}</p>
+              <p className="text-[14px] font-semibold text-ink-950">
+                {config?.branding.brandName ?? "Serah Terima"}
+              </p>
+              <p className="text-[11.5px] text-ink-500">
+                {config?.branding.claimDomain ?? "claim.example.com"}
+              </p>
             </div>
           </div>
           {config?.branding.supportEmail ? (

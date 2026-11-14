@@ -14,6 +14,8 @@
   --color-ink-950: #15130f;
   --color-ink-800: #2a2722;
   --color-ink-600: #57524a;
+  /* Small helper text on cream: 5.1:1, the lightest grey that still clears WCAG AA. */
+  --color-ink-500: #6b665d;
   --color-ink-400: #8b857a;
   --color-ink-300: #aca69b;
 
@@ -32,14 +34,18 @@
   --color-sky-700: #0b5c8a;
   --color-sky-100: #e3f0f8;
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
 
   --radius-lg: 12px;
   --radius-xl: 16px;
   --radius-2xl: 22px;
 
-  --shadow-card: 0 1px 2px rgba(21, 19, 15, 0.04), 0 8px 24px -16px rgba(21, 19, 15, 0.18);
+  --shadow-card:
+    0 1px 2px rgba(21, 19, 15, 0.04), 0 8px 24px -16px rgba(21, 19, 15, 0.18);
   --shadow-float: 0 12px 40px -18px rgba(21, 19, 15, 0.35);
 }
 
@@ -95,7 +101,11 @@
 
 @layer utilities {
   .grain {
-    background-image: radial-gradient(circle at 1px 1px, rgba(21, 19, 15, 0.06) 1px, transparent 0);
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      rgba(21, 19, 15, 0.06) 1px,
+      transparent 0
+    );
     background-size: 22px 22px;
   }
 

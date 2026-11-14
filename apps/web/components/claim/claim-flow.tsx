@@ -262,8 +262,8 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                     className="mb-1.5 flex items-baseline justify-between text-[13px] font-medium text-ink-700"
                   >
                     <span>Nomor pesanan Shopee</span>
-                    <span className="text-[11px] font-normal text-ink-400">
-                      18 digit
+                    <span className="text-[11px] font-normal text-ink-500">
+                      lihat detail pesanan
                     </span>
                   </label>
                   <input
@@ -282,9 +282,9 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                     spellCheck={false}
                     maxLength={32}
                     required
-                    className="h-12 w-full rounded-lg bg-canvas px-3.5 font-mono text-[15px] tracking-wide text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-300 focus:bg-surface focus:ring-2 focus:ring-brand-500"
+                    className="h-12 w-full rounded-lg bg-canvas px-3.5 font-mono text-[15px] tracking-wide text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-500 focus:bg-surface focus:ring-2 focus:ring-brand-500"
                   />
-                  <p className="mt-1.5 text-[11.5px] text-ink-400">
+                  <p className="mt-1.5 text-[11.5px] text-ink-500">
                     Ada di halaman Detail Pesanan Shopee, formatnya seperti
                     260101ABC1234.
                   </p>
@@ -304,9 +304,9 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                     placeholder="username pembeli"
                     autoComplete="username"
                     required
-                    className="h-12 w-full rounded-lg bg-canvas px-3.5 text-[15px] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-300 focus:bg-surface focus:ring-2 focus:ring-brand-500"
+                    className="h-12 w-full rounded-lg bg-canvas px-3.5 text-[15px] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-500 focus:bg-surface focus:ring-2 focus:ring-brand-500"
                   />
-                  <p className="mt-1.5 text-[11.5px] text-ink-400">
+                  <p className="mt-1.5 text-[11.5px] text-ink-500">
                     Cukup salah satu: username atau 4 digit terakhir nomor HP
                     pada pesanan. Kami mencocokkannya dengan data pembeli,
                     supaya produk tidak bisa diambil orang lain.
@@ -319,7 +319,7 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                     className="mb-1.5 flex items-baseline justify-between text-[13px] font-medium text-ink-700"
                   >
                     <span>4 digit terakhir nomor HP</span>
-                    <span className="text-[11px] font-normal text-ink-400">
+                    <span className="text-[11px] font-normal text-ink-500">
                       kalau username lupa
                     </span>
                   </label>
@@ -334,7 +334,7 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                     placeholder="2250"
                     inputMode="numeric"
                     autoComplete="off"
-                    className="h-12 w-full rounded-lg bg-canvas px-3.5 text-[15px] tracking-[0.2em] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:tracking-normal placeholder:text-ink-300 focus:bg-surface focus:ring-2 focus:ring-brand-500"
+                    className="h-12 w-full rounded-lg bg-canvas px-3.5 text-[15px] tracking-[0.2em] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:tracking-normal placeholder:text-ink-500 focus:bg-surface focus:ring-2 focus:ring-brand-500"
                   />
                 </div>
               </div>
@@ -384,14 +384,14 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                           setManualContact(event.target.value)
                         }
                         placeholder="Email atau nomor WhatsApp"
-                        className="h-11 w-full rounded-lg bg-surface px-3.5 text-[14px] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-300 focus:ring-2 focus:ring-brand-500"
+                        className="h-11 w-full rounded-lg bg-surface px-3.5 text-[14px] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-500 focus:ring-2 focus:ring-brand-500"
                       />
                       <textarea
                         value={manualNote}
                         onChange={(event) => setManualNote(event.target.value)}
                         placeholder="Catatan tambahan (opsional)"
                         rows={2}
-                        className="w-full rounded-lg bg-surface px-3.5 py-2.5 text-[14px] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-300 focus:ring-2 focus:ring-brand-500"
+                        className="w-full rounded-lg bg-surface px-3.5 py-2.5 text-[14px] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-500 focus:ring-2 focus:ring-brand-500"
                       />
                       {manualMessage ? (
                         <p className="text-[12px] text-rose-700">
@@ -438,14 +438,24 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                   (username.trim().length < 2 &&
                     phoneSuffix.replace(/\D/g, "").length < 4)
                 }
-                className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand-700 text-[15px] font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-40"
+                className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand-700 text-[15px] font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:border disabled:border-dashed disabled:border-ink-300 disabled:bg-surface disabled:text-ink-500"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {busy ? "Memeriksa pesanan" : "Klaim produk saya"}
                 {!busy ? <ArrowRight className="h-4 w-4" /> : null}
               </button>
 
-              <div className="mt-4 flex items-center justify-center gap-4 text-[11.5px] text-ink-400">
+              {!busy &&
+              (orderSn.length < 6 ||
+                (username.trim().length < 2 &&
+                  phoneSuffix.replace(/\D/g, "").length < 4)) ? (
+                <p className="mt-2 text-center text-[11.5px] text-ink-500">
+                  Isi nomor pesanan, lalu username atau 4 digit terakhir nomor
+                  HP.
+                </p>
+              ) : null}
+
+              <div className="mt-4 flex items-center justify-center gap-4 text-[11.5px] text-ink-500">
                 <span className="inline-flex items-center gap-1.5">
                   <ShieldCheck className="h-3.5 w-3.5 text-brand-600" />{" "}
                   Verifikasi dua langkah
@@ -592,13 +602,13 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
       </AnimatePresence>
 
       {config?.gatewayMode === "fixture" ? (
-        <p className="mt-8 text-center text-[11px] text-ink-300">
+        <p className="mt-8 text-center text-[11px] text-ink-500">
           Lingkungan demonstrasi: data toko berasal dari fixture, bukan dari
           Shopee.
         </p>
       ) : null}
 
-      <p className="mt-6 text-center text-[11px] text-ink-300">
+      <p className="mt-6 text-center text-[11px] text-ink-500">
         {brandName} · Portal klaim resmi · Tidak pernah meminta kata sandi
         Shopee
       </p>
@@ -769,7 +779,7 @@ function DeliveryView({
     return (
       <div className="space-y-2">
         <div className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2 ring-1 ring-inset ring-line">
-          <span className="w-20 shrink-0 text-[11.5px] text-ink-400">
+          <span className="w-20 shrink-0 text-[11.5px] text-ink-500">
             Username
           </span>
           <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-ink-950">
@@ -784,7 +794,7 @@ function DeliveryView({
           </button>
         </div>
         <div className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2 ring-1 ring-inset ring-line">
-          <span className="w-20 shrink-0 text-[11.5px] text-ink-400">
+          <span className="w-20 shrink-0 text-[11.5px] text-ink-500">
             Password
           </span>
           <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-ink-950">

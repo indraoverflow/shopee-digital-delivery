@@ -411,7 +411,7 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
      * here: it is the difference between "the link expired", "the shop does not
      * match the store" and "Shopee refused the exchange".
      */
-    request.log.info(
+    ctx.logger.info(
       {
         hasCode: Boolean(code),
         hasState: Boolean(state),
@@ -420,7 +420,7 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
       "shopee callback",
     );
     if (!code || !shopIdRaw || !state) {
-      request.log.warn(
+      ctx.logger.warn(
         { hasCode: Boolean(code), hasState: Boolean(state) },
         "shopee callback incomplete",
       );
@@ -433,7 +433,7 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
     try {
       storeId = readAuthorizeState(ctx.config, state);
     } catch {
-      request.log.warn("shopee callback state invalid");
+      ctx.logger.warn({}, "shopee callback state invalid");
       return reply.redirect(
         `${ctx.config.adminOrigin}/admin/stores?error=state_invalid`,
       );
@@ -447,7 +447,7 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
         .where(eq(schema.shopeeStores.id, storeId))
         .limit(1);
       if (!store) {
-        request.log.warn(
+        ctx.logger.warn(
           { storeId, shopId },
           "shopee callback for an unknown store",
         );
@@ -456,7 +456,7 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
         );
       }
       if (store.shopId !== shopId) {
-        request.log.warn(
+        ctx.logger.warn(
           { storeId, expectedShopId: store.shopId, shopId },
           "shopee callback shop does not match the store",
         );
@@ -490,7 +490,7 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
         targetId: store.id,
         ip: request.ip,
       });
-      request.log.info(
+      ctx.logger.info(
         { storeId: store.id, shopId },
         "shopee callback authorized",
       );
@@ -500,7 +500,7 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown";
       const code = (error as { code?: string }).code ?? null;
-      request.log.error(
+      ctx.logger.error(
         { storeId, shopId, code, message },
         "shopee callback exchange failed",
       );

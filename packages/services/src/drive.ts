@@ -1,4 +1,4 @@
-import { createHash, createSign } from "node:crypto";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
   AppError,
@@ -10,6 +10,7 @@ import {
 import { schema } from "@qansa/db";
 import { and, desc, eq } from "drizzle-orm";
 import { recordAudit } from "./audit.js";
+import { signServiceAccountAssertion } from "./jwt.js";
 import { loadClaimSession } from "./claims.js";
 import type { ServiceDeps } from "./types.js";
 import { nowOf } from "./types.js";
@@ -90,9 +91,6 @@ export function driveServiceAccountFromEnv(): DriveServiceAccount | null {
   }
 }
 
-const base64url = (value: string | Buffer): string =>
-  Buffer.from(value).toString("base64url");
-
 /** Cached access token for the robot identity, refreshed a minute before it expires. */
 let serviceAccountToken: { token: string; expiresAt: number } | null = null;
 
@@ -107,25 +105,20 @@ async function serviceAccountAccessToken(
   }
 
   const issuedAt = Math.floor(Date.now() / 1000);
-  const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claims = base64url(
-    JSON.stringify({
+  const assertion = signServiceAccountAssertion(
+    {
       iss: account.clientEmail,
       scope: DRIVE_SCOPE,
       aud: `${oauthBase()}/token`,
       iat: issuedAt,
       exp: issuedAt + 3600,
-    }),
-  );
-  const signature = base64url(
-    createSign("RSA-SHA256")
-      .update(`${header}.${claims}`)
-      .sign(account.privateKey),
+    },
+    account.privateKey,
   );
 
   const response = await postForm(`${oauthBase()}/token`, {
     grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    assertion: `${header}.${claims}.${signature}`,
+    assertion,
   });
   const body = (await response.json().catch(() => ({}))) as TokenResponse;
   if (!response.ok || !body.access_token) {

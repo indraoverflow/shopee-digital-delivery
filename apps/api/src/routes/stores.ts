@@ -404,7 +404,26 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
     };
   }>("/api/integration/shopee/callback", async (request, reply) => {
     const { code, shop_id: shopIdRaw, state } = request.query;
+    /**
+     * Every exit from this route is a redirect, and a redirect is invisible in a
+     * container log that has request logging off. A seller who consents and lands
+     * on the stores page with a toast is the only witness, so log the reason
+     * here: it is the difference between "the link expired", "the shop does not
+     * match the store" and "Shopee refused the exchange".
+     */
+    request.log.info(
+      {
+        hasCode: Boolean(code),
+        hasState: Boolean(state),
+        shopId: shopIdRaw ?? null,
+      },
+      "shopee callback",
+    );
     if (!code || !shopIdRaw || !state) {
+      request.log.warn(
+        { hasCode: Boolean(code), hasState: Boolean(state) },
+        "shopee callback incomplete",
+      );
       return reply.redirect(
         `${ctx.config.adminOrigin}/admin/stores?error=callback_incomplete`,
       );
@@ -414,6 +433,7 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
     try {
       storeId = readAuthorizeState(ctx.config, state);
     } catch {
+      request.log.warn("shopee callback state invalid");
       return reply.redirect(
         `${ctx.config.adminOrigin}/admin/stores?error=state_invalid`,
       );
@@ -426,14 +446,24 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
         .from(schema.shopeeStores)
         .where(eq(schema.shopeeStores.id, storeId))
         .limit(1);
-      if (!store)
+      if (!store) {
+        request.log.warn(
+          { storeId, shopId },
+          "shopee callback for an unknown store",
+        );
         return reply.redirect(
           `${ctx.config.adminOrigin}/admin/stores?error=store_missing`,
         );
-      if (store.shopId !== shopId)
+      }
+      if (store.shopId !== shopId) {
+        request.log.warn(
+          { storeId, expectedShopId: store.shopId, shopId },
+          "shopee callback shop does not match the store",
+        );
         return reply.redirect(
           `${ctx.config.adminOrigin}/admin/stores?error=shop_mismatch`,
         );
+      }
 
       const token = await ctx.gateway.exchangeCode({ code, shopId });
       await saveToken(ctx.deps, store.id, token);
@@ -460,11 +490,20 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
         targetId: store.id,
         ip: request.ip,
       });
+      request.log.info(
+        { storeId: store.id, shopId },
+        "shopee callback authorized",
+      );
       return reply.redirect(
         `${ctx.config.adminOrigin}/admin/stores/${store.id}?connected=1`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown";
+      const code = (error as { code?: string }).code ?? null;
+      request.log.error(
+        { storeId, shopId, code, message },
+        "shopee callback exchange failed",
+      );
       await markStoreError(
         ctx.deps,
         storeId,

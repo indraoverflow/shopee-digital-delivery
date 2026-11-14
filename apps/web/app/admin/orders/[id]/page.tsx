@@ -138,6 +138,7 @@ export default function OrderDetailPage({
   const [trackingNumber, setTrackingNumber] = useState("");
   /** The minted e-Meterai link, fetched only when an operator asks for it. */
   const [mintedLink, setMintedLink] = useState<{
+    urls: string[];
     url: string;
     mintedAt: string;
   } | null>(null);
@@ -172,7 +173,7 @@ export default function OrderDetailPage({
     setLinkBusy(fulfillmentId);
     try {
       setMintedLink(
-        await api.get<{ url: string; mintedAt: string }>(
+        await api.get<{ url: string; urls: string[]; mintedAt: string }>(
           `/admin/fulfillments/${fulfillmentId}/minted-link`,
         ),
       );
@@ -606,13 +607,42 @@ export default function OrderDetailPage({
         confirmLabel="Tutup"
         onConfirm={() => setMintedLink(null)}
       >
-        <Field label="Tautan" hint="klik untuk memilih seluruh tautan">
-          <Input
-            readOnly
-            value={mintedLink?.url ?? ""}
-            onFocus={(event) => event.currentTarget.select()}
-          />
-        </Field>
+        {mintedLink && mintedLink.urls.length > 1 ? (
+          <div className="space-y-2">
+            <p className="text-[12px] text-ink-600">
+              {mintedLink.urls.length} tautan, satu untuk setiap meterai. Kirim
+              semuanya.
+            </p>
+            {mintedLink.urls.map((url, index) => (
+              <div key={url} className="flex items-center gap-2">
+                <Input
+                  readOnly
+                  value={url}
+                  onFocus={(event) => event.currentTarget.select()}
+                  aria-label={`Tautan meterai ${index + 1}`}
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(url);
+                    toast({ title: `Tautan ${index + 1} disalin` });
+                  }}
+                >
+                  Salin
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Field label="Tautan" hint="klik untuk memilih seluruh tautan">
+            <Input
+              readOnly
+              value={mintedLink?.url ?? ""}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </Field>
+        )}
         <div className="flex items-center justify-between gap-2">
           <p className="text-[11.5px] text-ink-500">
             Dibuat {mintedLink ? formatDateTime(mintedLink.mintedAt) : "—"}
@@ -622,7 +652,7 @@ export default function OrderDetailPage({
             variant="secondary"
             onClick={() => {
               if (!mintedLink) return;
-              void navigator.clipboard.writeText(mintedLink.url);
+              void navigator.clipboard.writeText(mintedLink.urls.join("\n"));
               toast({ title: "Tautan disalin" });
             }}
           >

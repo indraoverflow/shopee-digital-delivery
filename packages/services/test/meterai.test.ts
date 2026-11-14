@@ -84,7 +84,11 @@ beforeAll(async () => {
         message: "success",
         result: {
           message: `success generate link reseller sebanyak ${inside.qty}`,
-          linkUrl: [`${baseUrl}/pdfViewer?refid=REF${mintCalls}`],
+          linkUrl: Array.from(
+            { length: inside.qty },
+            (_, index) =>
+              `${baseUrl}/pdfViewer?refid=REF${mintCalls}-${index + 1}`,
+          ),
         },
       });
     }
@@ -157,7 +161,8 @@ describe("minting an e-Meterai link", () => {
     });
 
     expect(result.alreadyMinted).toBe(false);
-    expect(result.url).toBe(`${baseUrl}/pdfViewer?refid=REF1`);
+    expect(result.url).toBe(`${baseUrl}/pdfViewer?refid=REF1-1`);
+    expect(result.urls).toHaveLength(1);
     expect(mintCalls).toBe(1);
 
     const [stored] = await h!.db.db
@@ -199,6 +204,37 @@ describe("minting an e-Meterai link", () => {
     expect(second.alreadyMinted).toBe(true);
     expect(second.url).toBe(first.url);
     expect(mintCalls).toBe(1);
+  });
+
+  it("keeps every link when the buyer ordered several meterai", async () => {
+    const fulfillment = await meteraiFulfilment();
+    await h!.db.db
+      .update(schema.fulfillments)
+      .set({ quantity: 3 })
+      .where(eq(schema.fulfillments.id, fulfillment.id));
+
+    const result = await mintFulfillmentLink(h!.deps, {
+      fulfillmentId: fulfillment.id,
+      actor: { id: "1", email: "ops@qansa.web.id" },
+    });
+
+    // One link per stamp: three meterai means three links, and three units of balance.
+    expect(result.urls).toHaveLength(3);
+    expect(result.urls[2]).toBe(`${baseUrl}/pdfViewer?refid=REF1-3`);
+    expect(mintCalls).toBe(1);
+
+    const [stored] = await h!.db.db
+      .select()
+      .from(schema.fulfillments)
+      .where(eq(schema.fulfillments.id, fulfillment.id));
+    expect(stored!.mintedSecretEnc).not.toContain("pdfViewer");
+
+    const again = await mintFulfillmentLink(h!.deps, {
+      fulfillmentId: fulfillment.id,
+      actor: { id: "1", email: "ops@qansa.web.id" },
+    });
+    expect(again.alreadyMinted).toBe(true);
+    expect(again.urls).toHaveLength(3);
   });
 
   it("refuses without touching the supplier when the account is not configured", async () => {
@@ -250,6 +286,56 @@ describe("minting an e-Meterai link", () => {
 });
 
 describe("delivering a minted link", () => {
+  it("serves every link of a multi-meterai order", async () => {
+    const fulfillment = await meteraiFulfilment();
+    await h!.db.db
+      .update(schema.fulfillments)
+      .set({ quantity: 2 })
+      .where(eq(schema.fulfillments.id, fulfillment.id));
+
+    const minted = await mintFulfillmentLink(h!.deps, {
+      fulfillmentId: fulfillment.id,
+      actor: { id: "1", email: "ops@qansa.web.id" },
+    });
+    expect(minted.urls).toHaveLength(2);
+
+    const verified = await verifyClaim(h!.deps, {
+      orderSn: "260101TEST0001",
+      buyerUsername: "rina_kurnia",
+    });
+    const delivery = await accessDelivery(h!.deps, {
+      token: verified.token,
+      fulfillmentId: fulfillment.id,
+    });
+    expect(delivery.kind).toBe("LINK");
+    expect(delivery.kind === "LINK" && delivery.links).toHaveLength(2);
+    expect(delivery.kind === "LINK" && delivery.url).toBe(minted.urls[0]);
+  });
+
+  it("still serves a row written before links were stored as an array", async () => {
+    const fulfillment = await meteraiFulfilment();
+    await h!.db.db
+      .update(schema.fulfillments)
+      .set({
+        mintedSecretEnc: encryptSecret(`${baseUrl}/pdfViewer?refid=OLD1`, KEY),
+        mintedAt: new Date(),
+        mintedBy: "ops@qansa.web.id",
+      })
+      .where(eq(schema.fulfillments.id, fulfillment.id));
+
+    const verified = await verifyClaim(h!.deps, {
+      orderSn: "260101TEST0001",
+      buyerUsername: "rina_kurnia",
+    });
+    const delivery = await accessDelivery(h!.deps, {
+      token: verified.token,
+      fulfillmentId: fulfillment.id,
+    });
+    expect(delivery.kind === "LINK" && delivery.links).toEqual([
+      `${baseUrl}/pdfViewer?refid=OLD1`,
+    ]);
+  });
+
   it("hands the buyer the minted link, not a pooled code", async () => {
     const fulfillment = await meteraiFulfilment();
     await mintFulfillmentLink(h!.deps, {
@@ -271,7 +357,8 @@ describe("delivering a minted link", () => {
 
     expect(payload).toMatchObject({
       kind: "LINK",
-      url: `${baseUrl}/pdfViewer?refid=REF1`,
+      url: `${baseUrl}/pdfViewer?refid=REF1-1`,
+      links: [`${baseUrl}/pdfViewer?refid=REF1-1`],
     });
   });
 

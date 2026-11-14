@@ -27,6 +27,7 @@ import {
 } from "drizzle-orm";
 import { recordAudit } from "./audit.js";
 import { findApprovedWindow } from "./claim-requests.js";
+import { decodeMintedLinks } from "./meterai.js";
 import { notify } from "./notify.js";
 import { queueAutoShip } from "./shipping.js";
 import { loadSettings } from "./settings.js";
@@ -412,7 +413,14 @@ export type DeliveryPayload =
       expiresAt: string;
       instructions: string | null;
     }
-  | { kind: "LINK"; url: string; instructions: string | null }
+  | {
+      kind: "LINK";
+      /** First link, for callers that render one button. */
+      url: string;
+      /** Every link the supplier returned: one per stamp. */
+      links: string[];
+      instructions: string | null;
+    }
   | { kind: "CODE"; code: string; instructions: string | null }
   | {
       kind: "CREDENTIALS";
@@ -538,11 +546,14 @@ export async function accessDelivery(
 
   // A minted link belongs to this buyer alone (for e-Meterai, it is worth money), so
   // it is served instead of the shared product URL or a code from the pool.
-  const mintedUrl = fulfillment.mintedSecretEnc
-    ? decryptSecret(fulfillment.mintedSecretEnc, deps.config.appEncryptionKey)
+  const mintedLinks = fulfillment.mintedSecretEnc
+    ? decodeMintedLinks(
+        fulfillment.mintedSecretEnc,
+        deps.config.appEncryptionKey,
+      )
     : null;
 
-  if (product.meteraiEnabled && !mintedUrl) {
+  if (product.meteraiEnabled && !mintedLinks?.length) {
     throw new AppError(
       "OUT_OF_STOCK",
       "Tautan e-Meterai untuk pesanan ini belum dibuat. Dukungan akan segera menyusulkannya.",
@@ -624,8 +635,13 @@ export async function accessDelivery(
       const base = { instructions: product.instructions ?? null };
       let payload: DeliveryPayload;
 
-      if (mintedUrl) {
-        payload = { kind: "LINK", url: mintedUrl, ...base };
+      if (mintedLinks?.length) {
+        payload = {
+          kind: "LINK",
+          url: mintedLinks[0]!,
+          links: mintedLinks,
+          ...base,
+        };
       } else if (product.deliveryKind === "FILE" && asset) {
         const ttlMs = settings.claim.downloadTtlMinutes * 60_000;
         const expiresAt = new Date(now.getTime() + ttlMs);
@@ -643,7 +659,12 @@ export async function accessDelivery(
           ...base,
         };
       } else if (product.deliveryKind === "LINK") {
-        payload = { kind: "LINK", url: product.externalUrl!, ...base };
+        payload = {
+          kind: "LINK",
+          url: product.externalUrl!,
+          links: [product.externalUrl!],
+          ...base,
+        };
       } else if (product.deliveryKind === "INSTRUCTIONS") {
         payload = { kind: "INSTRUCTIONS", ...base };
       } else {

@@ -55,8 +55,9 @@ describe("health and public config", () => {
     const response = await api({ method: "GET", url: "/api/public/config" });
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.branding.brandName).toBe("Qansa");
-    expect(body.branding.claimDomain).toBe("claim.qansa.web.id");
+    // The buyer-facing product is Serah Terima; Qansa is the operator's own platform.
+    expect(body.branding.brandName).toBe("Serah Terima");
+    expect(body.branding.claimDomain).toBe("claim.example.com");
     expect(body.gatewayMode).toBe("fixture");
   });
 });

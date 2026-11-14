@@ -183,11 +183,15 @@ export async function mintMeteraiLink(
     result?: { linkUrl?: string | string[]; message?: string };
   };
 
-  const links = Array.isArray(body.result?.linkUrl)
+  // The supplier answers with one linkUrl entry per stamp; a single element is the
+  // exception, not the norm. Everything is kept, in order.
+  const rawLinks = Array.isArray(body.result?.linkUrl)
     ? body.result?.linkUrl
     : [body.result?.linkUrl].filter(Boolean);
-  const url = links[0];
-  if (body.status !== "00" || !url) {
+  const urls = rawLinks.filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+  if (body.status !== "00" || urls.length === 0) {
     throw new AppError(
       "METERAI_MINT_FAILED",
       `e-Meterai gagal membuat tautan: ${body.message ?? response.status}`,
@@ -197,13 +201,35 @@ export async function mintMeteraiLink(
       },
     );
   }
-  return { url, quantity };
+  return { urls, url: urls[0]!, quantity };
 }
 
 export interface RevealInput {
   fulfillmentId: string;
   actor: { id: string; email: string };
   ip?: string | null;
+}
+
+/**
+ * What the supplier hands back.
+ *
+ * One `generate-link` call with `qty` returns an **array** of linkUrl entries, one per
+ * stamp: five meterai means five links and five units of balance, not one link carrying
+ * five. Reading only the first element loses the buyer's money, so the stored value is a
+ * JSON array and every reader goes through these two helpers.
+ */
+export function decodeMintedLinks(encoded: string, keyHex: string): string[] {
+  const plain = decryptSecret(encoded, keyHex);
+  if (!plain.startsWith("{")) return [plain]; // rows written before arrays were stored
+  const parsed = JSON.parse(plain) as { urls?: unknown };
+  const urls = Array.isArray(parsed.urls)
+    ? parsed.urls.filter((value): value is string => typeof value === "string")
+    : [];
+  return urls.length > 0 ? urls : [plain];
+}
+
+function encodeMintedLinks(urls: string[], keyHex: string): string {
+  return encryptSecret(JSON.stringify({ urls }), keyHex);
 }
 
 /**
@@ -215,7 +241,7 @@ export interface RevealInput {
 export async function revealMintedLink(
   deps: ServiceDeps,
   input: RevealInput,
-): Promise<{ url: string; mintedAt: string }> {
+): Promise<{ urls: string[]; url: string; mintedAt: string }> {
   const [row] = await deps.db
     .select({
       fulfillment: schema.fulfillments,
@@ -242,7 +268,7 @@ export async function revealMintedLink(
     );
   }
 
-  const url = decryptSecret(
+  const urls = decodeMintedLinks(
     fulfillment.mintedSecretEnc,
     deps.config.appEncryptionKey,
   );
@@ -259,7 +285,7 @@ export async function revealMintedLink(
     ip: input.ip ?? null,
   });
 
-  return { url, mintedAt: fulfillment.mintedAt.toISOString() };
+  return { urls, url: urls[0]!, mintedAt: fulfillment.mintedAt.toISOString() };
 }
 
 export interface MintInput {
@@ -269,6 +295,9 @@ export interface MintInput {
 }
 
 export interface MintResult {
+  /** One link per stamp: quantity 5 means five links and five units of balance. */
+  urls: string[];
+  /** The first link, kept for callers that only need something clickable. */
   url: string;
   quantity: number;
   mintedAt: string;
@@ -314,11 +343,13 @@ export async function mintFulfillmentLink(
   }
 
   if (fulfillment.mintedSecretEnc && fulfillment.mintedAt) {
+    const stored = decodeMintedLinks(
+      fulfillment.mintedSecretEnc,
+      deps.config.appEncryptionKey,
+    );
     return {
-      url: decryptSecret(
-        fulfillment.mintedSecretEnc,
-        deps.config.appEncryptionKey,
-      ),
+      urls: stored,
+      url: stored[0]!,
       quantity: fulfillment.quantity,
       mintedAt: fulfillment.mintedAt.toISOString(),
       alreadyMinted: true,
@@ -347,7 +378,7 @@ export async function mintFulfillmentLink(
     ...(settings.meterai.baseUrl ? { baseUrl: settings.meterai.baseUrl } : {}),
   };
 
-  let minted: { url: string; quantity: number };
+  let minted: { urls: string[]; url: string; quantity: number };
   try {
     minted = await mintMeteraiLink(
       credentials,
@@ -366,11 +397,28 @@ export async function mintFulfillmentLink(
     throw error;
   }
 
+  // Balance is spent per link, so a short answer is the buyer's money going missing.
+  // Keep what arrived, and make the gap loud instead of silent.
+  if (minted.urls.length < minted.quantity) {
+    await notify(deps, {
+      type: "fulfillment.out_of_stock",
+      title: `e-Meterai mengembalikan ${minted.urls.length} tautan untuk ${minted.quantity} meterai`,
+      data: {
+        fulfillmentId: fulfillment.id,
+        links: minted.urls.length,
+        quantity: minted.quantity,
+      },
+    });
+  }
+
   const now = nowOf(deps);
   await deps.db
     .update(schema.fulfillments)
     .set({
-      mintedSecretEnc: encryptSecret(minted.url, deps.config.appEncryptionKey),
+      mintedSecretEnc: encodeMintedLinks(
+        minted.urls,
+        deps.config.appEncryptionKey,
+      ),
       mintedAt: now,
       mintedBy: input.actor.email,
       updatedAt: now,
@@ -383,6 +431,7 @@ export async function mintFulfillmentLink(
     payload: {
       fulfillmentId: fulfillment.id,
       quantity: minted.quantity,
+      links: minted.urls.length,
       by: input.actor.email,
     },
   });
@@ -394,12 +443,17 @@ export async function mintFulfillmentLink(
     action: "meterai.mint",
     targetType: "fulfillment",
     targetId: fulfillment.id,
-    metadata: { quantity: minted.quantity, urlHost: new URL(minted.url).host },
+    metadata: {
+      quantity: minted.quantity,
+      links: minted.urls.length,
+      urlHost: new URL(minted.urls[0]!).host,
+    },
     ip: input.ip ?? null,
   });
 
   return {
-    url: minted.url,
+    urls: minted.urls,
+    url: minted.urls[0]!,
     quantity: minted.quantity,
     mintedAt: now.toISOString(),
     alreadyMinted: false,

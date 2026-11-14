@@ -80,14 +80,15 @@ with the same static key and decrypts back to the credentials. Nothing is printe
 | ----------------------------------- | -------------------------------------------------------------------------------- |
 | Login with the stored password      | succeeds                                                                         |
 | Mint for a fulfilment of quantity 1 | one link, `alreadyMinted: false`, `minted_at` written, `meterai.mint` audited    |
-| Mint for a fulfilment of quantity 5 | **one** link, and the balance spent is 5                                         |
+| Mint for a fulfilment of quantity 5 | five links, one per stamp, and the balance spent is 5                            |
 | Buyer path                          | `POST /api/claim/fulfillments/:id/access` returns that same link as `kind: LINK` |
 | Balance read                        | login succeeds, but the endpoint answers without a readable body (`saldo: null`) |
 
-The important correction to earlier assumptions: Shopee's e-Meterai supplier returns **one link per
-fulfilment**, and `quantity` decides how many stamps that link carries and how much balance it
-spends. A buyer who purchases five meterai does not receive five links. The portal now says so in
-one line under the button.
+The supplier answers with `linkUrl` as an **array**: one entry per stamp, and the balance drops by
+the same count. A five-meterai order receives five links. The first implementation kept only
+`linkUrl[0]`, so four paid links were thrown away; the stored value is now a JSON array under the
+same encrypted column, with a fallback for rows written before that change. Both the portal and the
+operator dialog list every link.
 
 ## Minting inside the pipeline
 

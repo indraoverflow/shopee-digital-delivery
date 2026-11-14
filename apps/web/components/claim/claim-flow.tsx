@@ -73,7 +73,13 @@ type Delivery =
       expiresAt: string;
       instructions: string | null;
     }
-  | { kind: "LINK"; url: string; instructions: string | null }
+  | {
+      kind: "LINK";
+      url: string;
+      /** One entry per stamp; a five-meterai order arrives as five links. */
+      links?: string[];
+      instructions: string | null;
+    }
   | { kind: "CODE"; code: string; instructions: string | null }
   | {
       kind: "CREDENTIALS";
@@ -567,11 +573,7 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                           instructions={item.instructions}
                         />
                       ) : delivery ? (
-                        <DeliveryView
-                          delivery={delivery}
-                          quantity={item.quantity}
-                          onCopy={copy}
-                        />
+                        <DeliveryView delivery={delivery} onCopy={copy} />
                       ) : (
                         <button
                           onClick={() => void reveal(item)}
@@ -755,11 +757,9 @@ function DriveClaim({
 
 function DeliveryView({
   delivery,
-  quantity,
   onCopy,
 }: {
   delivery: Delivery;
-  quantity: number;
   onCopy: (value: string, label: string) => void;
 }) {
   if (delivery.kind === "CODE") {
@@ -832,22 +832,50 @@ function DeliveryView({
   }
 
   if (delivery.kind === "LINK") {
+    const links = delivery.links?.length ? delivery.links : [delivery.url];
     return (
       <div>
-        <a
-          href={delivery.url}
-          target="_blank"
-          rel="noopener noreferrer nofollow"
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-700 text-[14px] font-medium text-white hover:bg-brand-800"
-        >
-          <ExternalLink className="h-4 w-4" /> Buka akses produk
-        </a>
-        {quantity > 1 ? (
-          <p className="mt-2 text-center text-[11.5px] text-ink-500">
-            Satu tautan untuk {quantity} unit sekaligus. Simpan tautan ini,
-            jangan dibagikan.
-          </p>
-        ) : null}
+        {links.length > 1 ? (
+          <>
+            <p className="mb-1.5 text-[11.5px] font-medium uppercase tracking-wide text-ink-400">
+              {links.length} tautan meterai
+            </p>
+            <div className="space-y-2">
+              {links.map((url, index) => (
+                <div key={url} className="flex items-center gap-2">
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                    className="flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg bg-brand-700 text-[13px] font-medium text-white hover:bg-brand-800"
+                  >
+                    <ExternalLink className="h-4 w-4" /> Meterai {index + 1}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => onCopy(url, `Tautan meterai ${index + 1}`)}
+                    aria-label={`Salin tautan meterai ${index + 1}`}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-600 ring-1 ring-inset ring-line hover:bg-canvas"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-center text-[11.5px] text-ink-500">
+              Satu tautan untuk satu meterai. Jangan dibagikan.
+            </p>
+          </>
+        ) : (
+          <a
+            href={links[0]}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-700 text-[14px] font-medium text-white hover:bg-brand-800"
+          >
+            <ExternalLink className="h-4 w-4" /> Buka akses produk
+          </a>
+        )}
         {delivery.instructions ? (
           <p className="mt-2 text-[12px] leading-relaxed text-ink-500">
             {delivery.instructions}

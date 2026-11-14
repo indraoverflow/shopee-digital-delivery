@@ -19,7 +19,7 @@ order is theirs. Nobody copies a link into a chat by hand.
 | API                            | 49 routes, typed end to end (Zod at every boundary)                                      |
 | Buyer portal                   | Working: verified against a real order, code and file delivery, plus manual verification |
 | Admin console                  | 14 pages, all wired to the API                                                           |
-| Automated tests                | 256 tests across 23 files: unit, integration, HTTP journey, worker                       |
+| Automated tests                | 295 tests across 27 files: unit, integration, HTTP journey, worker                       |
 | Smoke test                     | `scripts/smoke.mjs` passes against a live API + worker + PostgreSQL                      |
 | Shopee connection              | `fixture` mode verified; `live` mode needs partner credentials (see below)               |
 | Docker                         | Multi-stage images for API/worker and web, compose stack, nginx                          |
@@ -203,7 +203,7 @@ Details, including the full state diagram, in [`docs/order-fulfillment.md`](docs
 ## Testing
 
 ```bash
-pnpm test         # 256 tests: core rules, SQL/migrations, pipeline, claims, security, shipping, HTTP journey, worker
+pnpm test         # 295 tests: core rules, SQL/migrations, pipeline, claims, security, shipping, HTTP journey, worker
 pnpm typecheck    # every package and app, strict mode
 pnpm -r build     # vendor, API/worker bundles, Next.js production build
 ```

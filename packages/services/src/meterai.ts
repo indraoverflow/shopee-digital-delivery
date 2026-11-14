@@ -305,6 +305,31 @@ export interface MintResult {
   alreadyMinted: boolean;
 }
 
+function credentialsFrom(
+  settings: Awaited<ReturnType<typeof loadSettings>>,
+  deps: ServiceDeps,
+): MeteraiCredentials {
+  if (
+    !settings.meterai.enabled ||
+    !settings.meterai.user ||
+    !settings.meterai.passwordEnc
+  ) {
+    throw new AppError(
+      "METERAI_DISABLED",
+      "Kredensial e-Meterai belum diatur di Pengaturan.",
+      409,
+    );
+  }
+  return {
+    user: settings.meterai.user,
+    password: decryptSecret(
+      settings.meterai.passwordEnc,
+      deps.config.appEncryptionKey,
+    ),
+    ...(settings.meterai.baseUrl ? { baseUrl: settings.meterai.baseUrl } : {}),
+  };
+}
+
 /**
  * Mint the link for one fulfilment, once.
  *
@@ -357,26 +382,7 @@ export async function mintFulfillmentLink(
   }
 
   const settings = await loadSettings(deps);
-  if (
-    !settings.meterai.enabled ||
-    !settings.meterai.user ||
-    !settings.meterai.passwordEnc
-  ) {
-    throw new AppError(
-      "METERAI_DISABLED",
-      "Kredensial e-Meterai belum diatur di Pengaturan.",
-      409,
-    );
-  }
-
-  const credentials: MeteraiCredentials = {
-    user: settings.meterai.user,
-    password: decryptSecret(
-      settings.meterai.passwordEnc,
-      deps.config.appEncryptionKey,
-    ),
-    ...(settings.meterai.baseUrl ? { baseUrl: settings.meterai.baseUrl } : {}),
-  };
+  const credentials = credentialsFrom(settings, deps);
 
   let minted: { urls: string[]; url: string; quantity: number };
   try {
@@ -457,5 +463,121 @@ export async function mintFulfillmentLink(
     quantity: minted.quantity,
     mintedAt: now.toISOString(),
     alreadyMinted: false,
+  };
+}
+
+/**
+ * Top up a fulfilment that holds fewer links than the buyer paid for.
+ *
+ * This exists because the first version of the mint kept only the first link of the array the
+ * supplier returns, so orders of several meterai reached the buyer short. It is also the repair
+ * path when the supplier answers with fewer links than the quantity requested. Only the missing
+ * count is minted, so a run costs exactly what it fills.
+ */
+export async function mintMissingLinks(
+  deps: ServiceDeps,
+  input: MintInput,
+): Promise<MintResult & { added: number }> {
+  const [row] = await deps.db
+    .select({
+      fulfillment: schema.fulfillments,
+      product: schema.digitalProducts,
+    })
+    .from(schema.fulfillments)
+    .innerJoin(
+      schema.digitalProducts,
+      eq(schema.digitalProducts.id, schema.fulfillments.digitalProductId),
+    )
+    .where(eq(schema.fulfillments.id, input.fulfillmentId))
+    .limit(1);
+
+  if (!row) throw AppError.notFound("Fulfilment");
+  const { fulfillment, product } = row;
+
+  if (!product.meteraiEnabled) {
+    throw AppError.validation("Produk ini bukan produk e-Meterai.");
+  }
+  if (fulfillment.status === "REVOKED") {
+    throw new AppError(
+      "ACCESS_REVOKED",
+      "Akses produk ini sudah dicabut; tautan tidak dibuat.",
+      409,
+    );
+  }
+  if (!fulfillment.mintedSecretEnc || !fulfillment.mintedAt) {
+    throw new AppError(
+      "METERAI_LINK_MISSING",
+      "Pesanan ini belum punya tautan sama sekali; buat tautan baru, bukan tambahan.",
+      409,
+    );
+  }
+
+  const stored = decodeMintedLinks(
+    fulfillment.mintedSecretEnc,
+    deps.config.appEncryptionKey,
+  );
+  const missing = Math.max(0, fulfillment.quantity - stored.length);
+  if (missing === 0) {
+    return {
+      urls: stored,
+      url: stored[0]!,
+      quantity: fulfillment.quantity,
+      mintedAt: fulfillment.mintedAt.toISOString(),
+      alreadyMinted: true,
+      added: 0,
+    };
+  }
+
+  const settings = await loadSettings(deps);
+  const credentials = credentialsFrom(settings, deps);
+  const minted = await mintMeteraiLink(credentials, missing);
+  const urls = [...stored, ...minted.urls];
+
+  const now = nowOf(deps);
+  await deps.db
+    .update(schema.fulfillments)
+    .set({
+      mintedSecretEnc: encodeMintedLinks(urls, deps.config.appEncryptionKey),
+      updatedAt: now,
+    })
+    .where(eq(schema.fulfillments.id, fulfillment.id));
+
+  await recordAudit(deps, {
+    actorType: input.actor.system ? "SYSTEM" : "ADMIN",
+    actorId: input.actor.system ? null : input.actor.id,
+    actorLabel: input.actor.email,
+    action: "meterai.mint",
+    targetType: "fulfillment",
+    targetId: fulfillment.id,
+    metadata: {
+      quantity: minted.quantity,
+      links: urls.length,
+      repair: true,
+      urlHost: new URL(minted.urls[0]!).host,
+    },
+    ip: input.ip ?? null,
+  });
+
+  // The event comes last on purpose: the links and the audit row are the record that money
+  // moved, and neither should depend on a later write succeeding.
+  await deps.db.insert(schema.orderEvents).values({
+    orderId: fulfillment.orderId,
+    type: "METERAI_LINK_MINTED",
+    payload: {
+      fulfillmentId: fulfillment.id,
+      quantity: minted.quantity,
+      links: urls.length,
+      repair: true,
+      by: input.actor.email,
+    },
+  });
+
+  return {
+    urls,
+    url: urls[0]!,
+    quantity: fulfillment.quantity,
+    mintedAt: now.toISOString(),
+    alreadyMinted: false,
+    added: minted.urls.length,
   };
 }

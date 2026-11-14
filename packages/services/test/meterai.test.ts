@@ -8,6 +8,7 @@ import {
   decryptMeteraiPayload,
   encryptMeteraiPayload,
   mintFulfillmentLink,
+  mintMissingLinks,
 } from "../src/meterai.js";
 import { processOrder } from "../src/orders.js";
 import { runProductSync } from "../src/sync.js";
@@ -235,6 +236,35 @@ describe("minting an e-Meterai link", () => {
     });
     expect(again.alreadyMinted).toBe(true);
     expect(again.urls).toHaveLength(3);
+  });
+
+  it("tops up only the links the buyer is short", async () => {
+    const fulfillment = await meteraiFulfilment();
+    await mintFulfillmentLink(h!.deps, {
+      fulfillmentId: fulfillment.id,
+      actor: { id: "1", email: "ops@qansa.web.id" },
+    });
+    await h!.db.db
+      .update(schema.fulfillments)
+      .set({ quantity: 3 })
+      .where(eq(schema.fulfillments.id, fulfillment.id));
+
+    const repaired = await mintMissingLinks(h!.deps, {
+      fulfillmentId: fulfillment.id,
+      actor: { id: "1", email: "ops@qansa.web.id" },
+    });
+
+    // Two missing of three: two links minted, three in total, and no second spend later.
+    expect(repaired.added).toBe(2);
+    expect(repaired.urls).toHaveLength(3);
+    expect(mintCalls).toBe(2);
+
+    const again = await mintMissingLinks(h!.deps, {
+      fulfillmentId: fulfillment.id,
+      actor: { id: "1", email: "ops@qansa.web.id" },
+    });
+    expect(again.added).toBe(0);
+    expect(mintCalls).toBe(2);
   });
 
   it("refuses without touching the supplier when the account is not configured", async () => {

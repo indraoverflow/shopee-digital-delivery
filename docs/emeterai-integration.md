@@ -72,6 +72,23 @@ The credentials file may be either `email=...` / `password=...` lines or a captu
 `curl ... --data '{"data":"<blob>"}'` from the browser; both are accepted, because the blob is encrypted
 with the same static key and decrypts back to the credentials. Nothing is printed either way.
 
+## Verified against the live account
+
+2026-11-14, on the compose stack, account `igam07541@gmail.com` from `settings.meterai`:
+
+| Check                               | Result                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| Login with the stored password      | succeeds                                                                         |
+| Mint for a fulfilment of quantity 1 | one link, `alreadyMinted: false`, `minted_at` written, `meterai.mint` audited    |
+| Mint for a fulfilment of quantity 5 | **one** link, and the balance spent is 5                                         |
+| Buyer path                          | `POST /api/claim/fulfillments/:id/access` returns that same link as `kind: LINK` |
+| Balance read                        | login succeeds, but the endpoint answers without a readable body (`saldo: null`) |
+
+The important correction to earlier assumptions: Shopee's e-Meterai supplier returns **one link per
+fulfilment**, and `quantity` decides how many stamps that link carries and how much balance it
+spends. A buyer who purchases five meterai does not receive five links. The portal now says so in
+one line under the button.
+
 ## Minting inside the pipeline
 
 The design above is implemented.

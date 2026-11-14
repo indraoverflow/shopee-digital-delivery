@@ -567,7 +567,11 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                           instructions={item.instructions}
                         />
                       ) : delivery ? (
-                        <DeliveryView delivery={delivery} onCopy={copy} />
+                        <DeliveryView
+                          delivery={delivery}
+                          quantity={item.quantity}
+                          onCopy={copy}
+                        />
                       ) : (
                         <button
                           onClick={() => void reveal(item)}
@@ -751,9 +755,11 @@ function DriveClaim({
 
 function DeliveryView({
   delivery,
+  quantity,
   onCopy,
 }: {
   delivery: Delivery;
+  quantity: number;
   onCopy: (value: string, label: string) => void;
 }) {
   if (delivery.kind === "CODE") {
@@ -836,6 +842,12 @@ function DeliveryView({
         >
           <ExternalLink className="h-4 w-4" /> Buka akses produk
         </a>
+        {quantity > 1 ? (
+          <p className="mt-2 text-center text-[11.5px] text-ink-500">
+            Satu tautan untuk {quantity} unit sekaligus. Simpan tautan ini,
+            jangan dibagikan.
+          </p>
+        ) : null}
         {delivery.instructions ? (
           <p className="mt-2 text-[12px] leading-relaxed text-ink-500">
             {delivery.instructions}

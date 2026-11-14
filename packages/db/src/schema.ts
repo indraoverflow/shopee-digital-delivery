@@ -113,6 +113,8 @@ export const webhookStatusEnum = pgEnum("webhook_status", [
 export const verificationMethodEnum = pgEnum("verification_method", [
   "USERNAME",
   "USERNAME_PHONE",
+  /** Either factor passes: buyers forget their username or their old phone. */
+  "USERNAME_OR_PHONE",
   "MANUAL",
 ]);
 /** A buyer asking a human to vouch for them when the automatic factors cannot be met. */
@@ -892,7 +894,9 @@ export const driveCredentials = pgTable(
     scope: text("scope"),
     status: text("status").notNull().default("CONNECTED"),
     lastError: text("last_error"),
-    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    connectedAt: timestamp("connected_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

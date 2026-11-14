@@ -307,8 +307,9 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                     className="h-12 w-full rounded-lg bg-canvas px-3.5 text-[15px] text-ink-950 shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-300 focus:bg-surface focus:ring-2 focus:ring-brand-500"
                   />
                   <p className="mt-1.5 text-[11.5px] text-ink-400">
-                    Kami mencocokkannya dengan data pembeli pada pesanan, supaya
-                    produk tidak bisa diambil orang lain.
+                    Cukup salah satu: username atau 4 digit terakhir nomor HP
+                    pada pesanan. Kami mencocokkannya dengan data pembeli,
+                    supaya produk tidak bisa diambil orang lain.
                   </p>
                 </div>
 
@@ -319,7 +320,7 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                   >
                     <span>4 digit terakhir nomor HP</span>
                     <span className="text-[11px] font-normal text-ink-400">
-                      jika diminta
+                      kalau username lupa
                     </span>
                   </label>
                   <input
@@ -431,7 +432,12 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
 
               <button
                 type="submit"
-                disabled={busy || orderSn.length < 6 || username.length < 2}
+                disabled={
+                  busy ||
+                  orderSn.length < 6 ||
+                  (username.trim().length < 2 &&
+                    phoneSuffix.replace(/\D/g, "").length < 4)
+                }
                 className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand-700 text-[15px] font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

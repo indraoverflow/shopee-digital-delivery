@@ -52,7 +52,8 @@ interface StoreDetail {
     brandName: string | null;
     supportEmail: string | null;
     supportWhatsapp: string | null;
-    verificationPolicy: "USERNAME" | "USERNAME_PHONE" | "MANUAL";
+    verificationPolicy:
+      "USERNAME" | "USERNAME_PHONE" | "USERNAME_OR_PHONE" | "MANUAL";
     eligibleStatuses: string[];
     lastProductSyncAt: string | null;
     lastOrderSyncAt: string | null;
@@ -453,6 +454,10 @@ export default function StoreDetailPage({
                 options={[
                   { value: "USERNAME", label: "Username Shopee" },
                   { value: "USERNAME_PHONE", label: "Username + 4 digit HP" },
+                  {
+                    value: "USERNAME_OR_PHONE",
+                    label: "Username atau 4 digit HP",
+                  },
                   { value: "MANUAL", label: "Manual oleh operator" },
                 ]}
                 className="w-full"

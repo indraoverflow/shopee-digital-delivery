@@ -1,0 +1,1 @@
+ALTER TYPE "public"."verification_method" ADD VALUE 'USERNAME_OR_PHONE' BEFORE 'MANUAL';

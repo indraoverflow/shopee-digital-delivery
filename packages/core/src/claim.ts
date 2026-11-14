@@ -13,7 +13,8 @@
  * rather than silently downgrading to one factor.
  */
 
-export type VerificationPolicy = "USERNAME" | "USERNAME_PHONE" | "MANUAL";
+export type VerificationPolicy =
+  "USERNAME" | "USERNAME_PHONE" | "USERNAME_OR_PHONE" | "MANUAL";
 
 export interface BuyerOrderFacts {
   buyerUsername?: string | null;
@@ -78,6 +79,39 @@ export function verifyBuyer(
   const providedUsername = input.buyerUsername
     ? normaliseUsername(input.buyerUsername)
     : "";
+
+  /**
+   * OR: either factor from the same order is enough. The order number is the secret;
+   * the username and the phone are two things the buyer may or may not still have, and
+   * someone who changed SIM cards should not lose a product they paid for. This branch
+   * runs before the username checks, because a buyer may arrive with only the phone.
+   */
+  if (policy === "USERNAME_OR_PHONE") {
+    const masked = facts.buyerPhoneMasked ?? "";
+    const typedPhone = digitsOf(input.phoneSuffix ?? "");
+    const phoneVisible = digitsOf(masked).length >= 4;
+
+    if (
+      providedUsername &&
+      expectedUsername &&
+      expectedUsername === providedUsername
+    )
+      return { ok: true, method: "USERNAME" };
+    if (
+      typedPhone.length >= 4 &&
+      phoneVisible &&
+      phoneSuffixMatches(masked, typedPhone)
+    )
+      return { ok: true, method: "USERNAME_PHONE" };
+    if (!providedUsername && typedPhone.length < 4)
+      return { ok: false, reason: "USERNAME_MISSING" };
+    if (!phoneVisible && !expectedUsername)
+      return { ok: false, reason: "PHONE_UNAVAILABLE" };
+    return {
+      ok: false,
+      reason: providedUsername ? "USERNAME_MISMATCH" : "PHONE_SUFFIX_MISMATCH",
+    };
+  }
 
   if (!expectedUsername) return { ok: false, reason: "USERNAME_MISSING" };
   if (!providedUsername) return { ok: false, reason: "USERNAME_MISSING" };

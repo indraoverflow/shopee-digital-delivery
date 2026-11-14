@@ -62,7 +62,7 @@ async function recordAttempt(
   deps: ServiceDeps,
   input: {
     orderSn: string;
-    method: "USERNAME" | "USERNAME_PHONE" | "MANUAL";
+    method: "USERNAME" | "USERNAME_PHONE" | "USERNAME_OR_PHONE" | "MANUAL";
     success: boolean;
     reason?: string;
     ip?: string;
@@ -327,7 +327,8 @@ export interface ClaimSessionView {
     productName: string;
     productDescription: string | null;
     instructions: string | null;
-    deliveryKind: "DRIVE" | "FILE" | "LINK" | "CODE" | "CREDENTIALS" | "INSTRUCTIONS";
+    deliveryKind:
+      "DRIVE" | "FILE" | "LINK" | "CODE" | "CREDENTIALS" | "INSTRUCTIONS";
     quantity: number;
     status: string;
     claimDeadline: string | null;

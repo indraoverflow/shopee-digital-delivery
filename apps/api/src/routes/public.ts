@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { AppError } from "@qansa/core";
 import { schema } from "@qansa/db";
@@ -28,9 +29,14 @@ const verifySchema = z.object({
 export async function publicRoutes(app: FastifyInstance): Promise<void> {
   const { ctx } = app;
 
-  app.get("/api/public/config", async () => {
+  /**
+   * Settings change once a week at most, and every visitor needs this before the page can
+   * paint. An ETag plus a short max-age lets the browser and Cloudflare answer it locally,
+   * which keeps the first paint off the API entirely on a repeat visit.
+   */
+  app.get("/api/public/config", async (request, reply) => {
     const settings = await ctx.settings();
-    return {
+    const body = {
       branding: settings.branding,
       claim: {
         requiresBuyerUsername: true,
@@ -39,6 +45,18 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       },
       gatewayMode: ctx.config.gatewayMode,
     };
+
+    const etag = `"${createHash("sha1").update(JSON.stringify(body)).digest("hex")}"`;
+    reply.header("etag", etag);
+    reply.header(
+      "cache-control",
+      "public, max-age=30, stale-while-revalidate=300",
+    );
+
+    if (request.headers["if-none-match"] === etag) {
+      return reply.code(304).send();
+    }
+    return body;
   });
 
   app.post(
@@ -193,13 +211,10 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       await ctx.db.execute(ctx.sql`select 1`);
       return { ok: true };
     } catch (error) {
-      return reply
-        .code(503)
-        .send({
-          ok: false,
-          error:
-            error instanceof Error ? error.message : "database unreachable",
-        });
+      return reply.code(503).send({
+        ok: false,
+        error: error instanceof Error ? error.message : "database unreachable",
+      });
     }
   });
 }

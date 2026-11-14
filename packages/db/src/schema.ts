@@ -488,6 +488,9 @@ export const orders = pgTable(
     index("orders_state_idx").on(table.state),
     index("orders_created_idx").on(table.createdAt),
     index("orders_buyer_idx").on(table.buyerUsername),
+    // The claim portal looks an order up by its number alone: a buyer types the number, not
+    // the store. The unique key above starts with store_id, so it cannot serve that lookup.
+    index("orders_order_sn_idx").on(table.orderSn),
   ],
 );
 

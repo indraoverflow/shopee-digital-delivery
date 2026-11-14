@@ -16,12 +16,17 @@ interface PublicConfig {
 /**
  * Branding and claim limits are read on the server so the page paints with the
  * real store name, and the browser never waits on a second round trip.
+ *
+ * Revalidated every 30 seconds instead of `no-store`: the shell is identical for everybody,
+ * so a cached copy removes the API call from the critical path of almost every visit.
  */
+export const revalidate = 30;
+
 async function loadConfig(): Promise<PublicConfig | null> {
   try {
     const response = await fetch(
       `${process.env.API_URL ?? "http://127.0.0.1:4000"}/api/public/config`,
-      { cache: "no-store" },
+      { next: { revalidate: 30 } },
     );
     if (!response.ok) return null;
     return (await response.json()) as PublicConfig;

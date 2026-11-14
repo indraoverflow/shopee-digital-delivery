@@ -36,6 +36,13 @@
       "when": 1794619741928,
       "tag": "0004_verification_both_factors",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794662580340,
+      "tag": "0005_orders_order_sn_index",
+      "breakpoints": true
     }
   ]
 }

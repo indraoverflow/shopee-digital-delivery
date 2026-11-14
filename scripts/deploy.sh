@@ -18,7 +18,13 @@ if [[ -z "$TAG" ]]; then
   exit 2
 fi
 
+# The tunnel is part of the running stack. Deploying without its file left cloudflared attached
+# to a network that no longer existed, so every public hostname it serves answered nothing while
+# the api itself was healthy.
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.pull.yml)
+for extra in docker-compose.cloudflare-tunnel.yml; do
+  [[ -f "$extra" ]] && COMPOSE+=(-f "$extra")
+done
 API_PORT="${API_HOST_PORT:-4000}"
 WEB_PORT="${WEB_HOST_PORT:-3300}"
 STATE_FILE=".deploy-tag"

@@ -425,6 +425,33 @@ describe("accessDelivery", () => {
     ).rejects.toMatchObject({ code: "DELIVERY_LIMIT" });
   });
 
+  it("never runs out of a link the buyer keeps", async () => {
+    const { order, fulfillment } = await paidOrder({
+      kind: "LINK",
+      maxDeliveries: 1,
+    });
+    const verified = await verifyClaim(h!.deps, {
+      orderSn: order.orderSn,
+      buyerUsername: "rina_kurnia",
+    });
+
+    // A Drive or e-Meterai link costs nothing per open and never expires, so the take-limit
+    // must not lock the buyer out of their own purchase.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const delivery = await accessDelivery(h!.deps, {
+        token: verified.token,
+        fulfillmentId: fulfillment.id,
+      });
+      expect(delivery).toMatchObject({ kind: "LINK" });
+    }
+
+    const [claim] = await h!.db.db
+      .select()
+      .from(schema.claims)
+      .where(eq(schema.claims.fulfillmentId, fulfillment.id));
+    expect(claim!.deliveriesUsed).toBe(0);
+  });
+
   it("returns a link product and a credentials product", async () => {
     const { order, fulfillment } = await paidOrder({ kind: "LINK" });
     const verified = await verifyClaim(h!.deps, {

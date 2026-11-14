@@ -197,3 +197,4 @@ export const plural = (
   pluralForm?: string,
 ): string =>
   `${formatNumber(count)} ${count === 1 ? singular : (pluralForm ?? singular)}`;
+

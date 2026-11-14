@@ -42,6 +42,19 @@ import { nowOf } from "./types.js";
 
 const CLAIMABLE_FULFILLMENT_STATES = ["CLAIMABLE", "CLAIMED"] as const;
 
+/**
+ * Deliveries that hand back a link the buyer keeps: an e-Meterai pdfViewer, a product URL, a
+ * Google Drive share. Nothing is minted or signed per open, and the link never expires, so
+ * charging it against the take-limit only punishes a buyer who closed the tab.
+ */
+const isPermanentLink = (product: {
+  meteraiEnabled: boolean;
+  deliveryKind: string;
+}): boolean =>
+  product.meteraiEnabled ||
+  product.deliveryKind === "LINK" ||
+  product.deliveryKind === "DRIVE";
+
 export interface VerifyClaimInput {
   orderSn: string;
   buyerUsername?: string | undefined;
@@ -397,6 +410,7 @@ export async function getClaimSessionView(
         claimedAt: fulfillment.claimedAt?.toISOString() ?? null,
         deliveriesUsed: used,
         deliveriesLeft: Math.max(0, product.maxDeliveries - used),
+        unlimitedDeliveries: isPermanentLink(product),
         previewImageUrl:
           product.deliveryKind === "LINK" ? product.externalUrl : null,
       };
@@ -604,7 +618,9 @@ export async function accessDelivery(
         claim = created!;
       }
 
-      if (claim.deliveriesUsed >= product.maxDeliveries) {
+      const permanent = isPermanentLink(product);
+
+      if (!permanent && claim.deliveriesUsed >= product.maxDeliveries) {
         throw new AppError(
           "DELIVERY_LIMIT",
           "Batas jumlah pengambilan produk ini sudah tercapai. Hubungi dukungan.",
@@ -615,7 +631,9 @@ export async function accessDelivery(
       const [updatedClaim] = await tx
         .update(schema.claims)
         .set({
-          deliveriesUsed: sql`${schema.claims.deliveriesUsed} + 1`,
+          ...(permanent
+            ? {}
+            : { deliveriesUsed: sql`${schema.claims.deliveriesUsed} + 1` }),
           status: "COMPLETED",
           completedAt: now,
           updatedAt: now,

@@ -60,6 +60,8 @@ interface SessionView {
     status: string;
     claimDeadline: string | null;
     deliveriesLeft: number;
+    /** Links the buyer keeps (e-Meterai, Drive, product URL) never run out. */
+    unlimitedDeliveries: boolean;
     claimedAt: string | null;
   }>;
 }
@@ -586,11 +588,16 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                             <Sparkles className="h-4 w-4" />
                           )}
                           {item.claimedAt
-                            ? "Buka lagi produk"
+                            ? item.unlimitedDeliveries
+                              ? "Buka lagi produk"
+                              : `Buka lagi produk · sisa ${item.deliveriesLeft}`
                             : "Buka produk sekarang"}
                         </button>
                       )}
-                      {!disabled && item.deliveriesLeft <= 1 && !delivery ? (
+                      {!disabled &&
+                      !item.unlimitedDeliveries &&
+                      item.deliveriesLeft <= 1 &&
+                      !delivery ? (
                         <p className="mt-2 text-center text-[11px] text-ink-400">
                           Sisa {item.deliveriesLeft} kali pengambilan
                         </p>
@@ -604,9 +611,11 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
             <div className="mt-4 rounded-xl bg-surface/70 px-4 py-3 text-[12px] leading-relaxed text-ink-500 ring-1 ring-line">
               <p className="flex items-start gap-2">
                 <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-400" />
-                Simpan kode atau berkas Anda sekarang. Tautan unduhan bersifat
-                sementara, dan sesi ini berakhir otomatis dalam{" "}
-                {config?.claim.sessionMinutes ?? 30} menit.
+                Sesi ini berakhir otomatis dalam{" "}
+                {config?.claim.sessionMinutes ?? 30} menit. Kode dan tautan yang
+                sifatnya permanen, seperti tautan e-Meterai dan Google Drive,
+                tetap bisa Anda buka lagi dengan nomor pesanan dan username yang
+                sama.
               </p>
             </div>
 
@@ -863,18 +872,24 @@ function DeliveryView({
               ))}
             </div>
             <p className="mt-2 text-center text-[11.5px] text-ink-500">
-              Satu tautan untuk satu meterai. Jangan dibagikan.
+              Satu tautan untuk satu meterai, tanpa masa berlaku. Jangan
+              dibagikan.
             </p>
           </>
         ) : (
-          <a
-            href={links[0]}
-            target="_blank"
-            rel="noopener noreferrer nofollow"
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-700 text-[14px] font-medium text-white hover:bg-brand-800"
-          >
-            <ExternalLink className="h-4 w-4" /> Buka akses produk
-          </a>
+          <>
+            <a
+              href={links[0]}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-700 text-[14px] font-medium text-white hover:bg-brand-800"
+            >
+              <ExternalLink className="h-4 w-4" /> Buka akses produk
+            </a>
+            <p className="mt-2 text-center text-[11.5px] text-ink-500">
+              Tautan ini tidak punya masa berlaku. Simpan dan jangan dibagikan.
+            </p>
+          </>
         )}
         {delivery.instructions ? (
           <p className="mt-2 text-[12px] leading-relaxed text-ink-500">

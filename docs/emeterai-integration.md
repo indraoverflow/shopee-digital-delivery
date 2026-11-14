@@ -90,6 +90,18 @@ the same count. A five-meterai order receives five links. The first implementati
 same encrypted column, with a fallback for rows written before that change. Both the portal and the
 operator dialog list every link.
 
+## The link has no expiry
+
+A minted `pdfViewer` link is not a signed URL: it stays valid as long as the account holds the
+stamp, so the buyer can open it again months later. Two consequences, both implemented:
+
+- opening it again does not spend balance and does not count against the product's take-limit, so
+  `deliveries_used` stays at 0 for e-Meterai products;
+- the portal says so plainly under the button instead of warning that the link is temporary. Only
+  a `FILE` delivery, which is a signed URL, carries an expiry.
+
+What expires is the claim session, not the product.
+
 ## Minting inside the pipeline
 
 The design above is implemented.

@@ -61,6 +61,13 @@ product folder, not the account used for mail, Photos and Gemini.
 The buyer's address is masked in every screen, log and audit row: `r***@gmail.com`. It is
 personal data, and the raw value is only in the grant table where it is needed to revoke.
 
+## The share has no expiry
+
+A Drive share stays valid until the operator revokes it, so the buyer can reopen the portal and
+copy the same link later. Reopening costs nothing and does not count against the product's
+take-limit: `deliveries_used` stays at 0 for `DRIVE` products. What expires is the claim session,
+not the product.
+
 ## Limits worth knowing before promising this to a buyer
 
 - **No verification of ownership.** Because the address is typed, a sufficiently wrong typo

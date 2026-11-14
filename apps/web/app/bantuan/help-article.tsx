@@ -97,7 +97,6 @@ function StepVisual({ step, hasShot }: { step: Step; hasShot: boolean }) {
   if (hasShot) {
     return (
       <figure className="mt-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={`/bantuan/${step.id}.png`}
           alt={`Tangkapan layar aplikasi Shopee untuk ${step.title}`}

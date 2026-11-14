@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
 import { schema } from "@qansa/db";
 import { apiHarness, PARTNER_KEY, PUSH_URL, pushBody, signPush, type ApiHarness } from "./helpers.js";
 

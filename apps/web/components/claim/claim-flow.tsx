@@ -323,14 +323,18 @@ export function ClaimFlow({ config }: { config: PublicConfig | null }) {
                       kalau username lupa
                     </span>
                   </label>
+                  {/* Exactly the four digits the label promises. Six was allowed before and
+                      it was a trap: Shopee masks all but the last four, so a buyer who typed
+                      six could never match, and the field looked broken for no reason. */}
                   <input
                     id="phone"
                     value={phoneSuffix}
                     onChange={(event) =>
                       setPhoneSuffix(
-                        event.target.value.replace(/\D/g, "").slice(0, 6),
+                        event.target.value.replace(/\D/g, "").slice(0, 4),
                       )
                     }
+                    maxLength={4}
                     placeholder="2250"
                     inputMode="numeric"
                     autoComplete="off"

@@ -61,6 +61,22 @@ product folder, not the account used for mail, Photos and Gemini.
 The buyer's address is masked in every screen, log and audit row: `r***@gmail.com`. It is
 personal data, and the raw value is only in the grant table where it is needed to revoke.
 
+## Two ways to authenticate, and one of them is free
+
+|               | Service account                                                | OAuth as the shop owner                                                             |
+| ------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Setup         | create a key, share product folders with the robot             | consent screen, client id, redirect, connect                                        |
+| Google review | none                                                           | verification plus a paid security assessment, because `drive` is a restricted scope |
+| Lives in      | `GOOGLE_SERVICE_ACCOUNT_FILE` or `GOOGLE_SERVICE_ACCOUNT_JSON` | `drive_credentials`, encrypted refresh token                                        |
+| Expires       | never; the app signs a JWT and caches the token for an hour    | refresh token dies if the app stays in Testing (7 days)                             |
+| Reaches       | files inside folders shared with the robot                     | any file in the shop's Drive                                                        |
+| Buyer sees    | viewer on the file                                             | viewer on the file                                                                  |
+
+The service account is the default recommendation: it costs nothing and needs no review. The
+catch is honest and narrow, files must live in a folder that was shared with the robot address,
+once per product folder. The admin store page shows which mode is active and hides the connect
+button when the server manages Drive itself.
+
 ## The share has no expiry
 
 A Drive share stays valid until the operator revokes it, so the buyer can reopen the portal and

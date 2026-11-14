@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { createHash, createSign } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   AppError,
   decryptSecret,
@@ -16,8 +17,18 @@ import { nowOf } from "./types.js";
 /**
  * Google Drive delivery: the shop keeps selling what it already sells, a Drive file, and
  * the platform shares that file with the buyer's Google account instead of sending a
- * link. A consumer @gmail.com account has no domain-wide delegation and no shared
- * drives, so sharing happens through a refresh token the shop owner consented to once.
+ * link.
+ *
+ * Two ways in, and the difference matters commercially:
+ *
+ * - **Service account** (preferred): the shop shares a folder with a robot address, and the
+ *   robot adds buyers to the files inside it. No consent screen, no verification, no
+ *   assessment bill, nothing expires.
+ * - **OAuth as the shop owner**: works on files anywhere in the shop's Drive, but the
+ *   `drive` scope is restricted, so Google requires verification plus a paid security
+ *   assessment before it can run in production.
+ *
+ * The buyer is always a `reader`: view, never edit.
  *
  * The address is typed by the buyer, because Shopee never sends the buyer's email. Two
  * things keep that honest: the form asks twice, and a mistake can be corrected for a
@@ -41,6 +52,95 @@ export interface DriveApp {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+}
+
+export interface DriveServiceAccount {
+  clientEmail: string;
+  privateKey: string;
+}
+
+/**
+ * A key file path or the JSON itself, never a secret in the repository. Without a usable key
+ * this returns null and the OAuth path stays in charge, so an unconfigured server says so
+ * instead of failing at the first buyer.
+ */
+export function driveServiceAccountFromEnv(): DriveServiceAccount | null {
+  const path = (process.env.GOOGLE_SERVICE_ACCOUNT_FILE ?? "").trim();
+  let raw = (process.env.GOOGLE_SERVICE_ACCOUNT_JSON ?? "").trim();
+  if (!raw && path) {
+    try {
+      raw = readFileSync(path, "utf8");
+    } catch {
+      return null;
+    }
+  }
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as {
+      client_email?: string;
+      private_key?: string;
+    };
+    if (!parsed.client_email || !parsed.private_key) return null;
+    return {
+      clientEmail: parsed.client_email,
+      privateKey: parsed.private_key.replace(/\\n/g, "\n"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+const base64url = (value: string | Buffer): string =>
+  Buffer.from(value).toString("base64url");
+
+/** Cached access token for the robot identity, refreshed a minute before it expires. */
+let serviceAccountToken: { token: string; expiresAt: number } | null = null;
+
+async function serviceAccountAccessToken(
+  account: DriveServiceAccount,
+): Promise<string> {
+  if (
+    serviceAccountToken &&
+    serviceAccountToken.expiresAt > Date.now() + 60_000
+  ) {
+    return serviceAccountToken.token;
+  }
+
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claims = base64url(
+    JSON.stringify({
+      iss: account.clientEmail,
+      scope: DRIVE_SCOPE,
+      aud: `${oauthBase()}/token`,
+      iat: issuedAt,
+      exp: issuedAt + 3600,
+    }),
+  );
+  const signature = base64url(
+    createSign("RSA-SHA256")
+      .update(`${header}.${claims}`)
+      .sign(account.privateKey),
+  );
+
+  const response = await postForm(`${oauthBase()}/token`, {
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    assertion: `${header}.${claims}.${signature}`,
+  });
+  const body = (await response.json().catch(() => ({}))) as TokenResponse;
+  if (!response.ok || !body.access_token) {
+    throw new AppError(
+      "DRIVE_TOKEN_INVALID",
+      `Service account Google Drive ditolak: ${body.error_description ?? body.error ?? response.status}`,
+      409,
+    );
+  }
+
+  serviceAccountToken = {
+    token: body.access_token,
+    expiresAt: Date.now() + (body.expires_in ?? 3600) * 1000,
+  };
+  return body.access_token;
 }
 
 /** Credentials come from the environment; without them the feature refuses, never guesses. */
@@ -91,6 +191,14 @@ export async function driveConnectUrl(
   deps: ServiceDeps,
   storeId: string,
 ): Promise<string> {
+  if (driveServiceAccountFromEnv()) {
+    throw new AppError(
+      "DRIVE_MANAGED",
+      "Google Drive dikelola service account di server ini. Tidak perlu menghubungkan akun toko.",
+      409,
+    );
+  }
+
   const app = driveAppFromEnv();
   if (!app)
     throw AppError.validation(
@@ -117,6 +225,7 @@ export async function driveConnectUrl(
 interface TokenResponse {
   access_token?: string;
   refresh_token?: string;
+  expires_in?: number;
   scope?: string;
   error?: string;
   error_description?: string;
@@ -240,24 +349,39 @@ export async function driveStatus(
 ): Promise<{
   configured: boolean;
   connected: boolean;
+  mode: "service_account" | "oauth" | "none";
   accountEmail: string | null;
   status: string | null;
   lastError: string | null;
   connectedAt: string | null;
 }> {
+  const account = driveServiceAccountFromEnv();
   const [credential] = await deps.db
     .select()
     .from(schema.driveCredentials)
     .where(eq(schema.driveCredentials.storeId, storeId))
     .limit(1);
 
+  if (account) {
+    return {
+      configured: true,
+      connected: true,
+      mode: "service_account",
+      accountEmail: account.clientEmail,
+      status: "CONNECTED",
+      lastError: null,
+      connectedAt: null,
+    };
+  }
+
   return {
     configured: driveAppFromEnv() !== null,
     connected: Boolean(credential),
+    mode: driveAppFromEnv() ? "oauth" : "none",
     accountEmail: credential?.accountEmail ?? null,
     status: credential?.status ?? null,
     lastError: credential?.lastError ?? null,
-    connectedAt: credential?.connectedAt.toISOString() ?? null,
+    connectedAt: credential?.connectedAt?.toISOString() ?? null,
   };
 }
 
@@ -304,6 +428,10 @@ async function accessTokenFor(
   deps: ServiceDeps,
   storeId: string,
 ): Promise<string> {
+  // The robot needs no per-shop consent, so nothing in drive_credentials can expire.
+  const account = driveServiceAccountFromEnv();
+  if (account) return serviceAccountAccessToken(account);
+
   const [credential] = await deps.db
     .select()
     .from(schema.driveCredentials)

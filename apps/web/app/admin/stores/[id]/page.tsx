@@ -99,6 +99,7 @@ export default function StoreDetailPage({
   const drive = useApi<{
     configured: boolean;
     connected: boolean;
+    mode: "service_account" | "oauth" | "none";
     accountEmail: string | null;
     connectedAt: string | null;
     status: string | null;
@@ -544,8 +545,11 @@ export default function StoreDetailPage({
                     {drive.data.accountEmail}
                   </p>
                   <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-500">
-                    Terhubung{" "}
-                    {drive.data.connectedAt
+                    {drive.data.mode === "service_account"
+                      ? "Dikelola service account server. Pembeli ditambahkan sebagai viewer."
+                      : "Terhubung "}
+                    {drive.data.mode !== "service_account" &&
+                    drive.data.connectedAt
                       ? formatDateTime(drive.data.connectedAt)
                       : ""}
                     {drive.data.status === "ERROR"
@@ -561,7 +565,7 @@ export default function StoreDetailPage({
                 </p>
               )}
             </div>
-            {can("store:write") ? (
+            {can("store:write") && drive.data?.mode !== "service_account" ? (
               drive.data?.connected ? (
                 <Button
                   variant="secondary"

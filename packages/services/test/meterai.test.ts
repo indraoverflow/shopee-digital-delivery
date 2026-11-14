@@ -35,8 +35,13 @@ let loginMode: "ok" | "refuse" = "ok";
 beforeAll(async () => {
   server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    // connection: close keeps the stub from recycling a socket the client still holds, which
+    // showed up as an ECONNRESET flake when the whole suite ran in parallel.
     const send = (status: number, body: unknown) => {
-      response.writeHead(status, { "content-type": "application/json" });
+      response.writeHead(status, {
+        "content-type": "application/json",
+        connection: "close",
+      });
       response.end(JSON.stringify(body));
     };
 

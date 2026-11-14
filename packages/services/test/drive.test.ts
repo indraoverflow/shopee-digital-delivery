@@ -8,6 +8,7 @@ import {
   expect,
   it,
 } from "vitest";
+import { generateKeyPairSync } from "node:crypto";
 import { AppError } from "@qansa/core";
 import { schema } from "@qansa/db";
 import { eq } from "drizzle-orm";
@@ -211,6 +212,85 @@ describe("connecting a store to Google Drive", () => {
         state: "forged.state",
       }),
     ).rejects.toThrow(/kedaluwarsa/i);
+  });
+});
+
+describe("service account mode", () => {
+  const savedKey = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
+  afterEach(() => {
+    if (savedKey === undefined) delete process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    else process.env.GOOGLE_SERVICE_ACCOUNT_JSON = savedKey;
+  });
+
+  function useServiceAccount(): void {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+      type: "service_account",
+      client_email: "robot@project.iam.gserviceaccount.com",
+      private_key: privateKey,
+    });
+  }
+
+  it("reports itself connected without any per-shop consent", async () => {
+    useServiceAccount();
+
+    const status = await driveStatus(h.deps, h.storeId);
+    expect(status).toMatchObject({
+      configured: true,
+      connected: true,
+      mode: "service_account",
+      accountEmail: "robot@project.iam.gserviceaccount.com",
+    });
+    // Nothing to click: there is no account to connect.
+    await expect(driveConnectUrl(h.deps, h.storeId)).rejects.toMatchObject({
+      code: "DRIVE_MANAGED",
+    });
+  });
+
+  it("signs a JWT assertion and still adds the buyer as a viewer", async () => {
+    useServiceAccount();
+    const { fulfillment, token } = await seedDriveFulfillment();
+
+    const result = await grantDriveAccess(h.deps, {
+      token,
+      fulfillmentId: fulfillment.id,
+      email: "rina.kurnia@gmail.com",
+      emailConfirm: "rina.kurnia@gmail.com",
+    });
+    expect(result.email).toBe("rina.kurnia@gmail.com");
+
+    const assertionCall = calls.find((call) => call.url.startsWith("/token"));
+    expect(assertionCall).toBeTruthy();
+    const form = new URLSearchParams(assertionCall!.body);
+    expect(form.get("grant_type")).toBe(
+      "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    );
+    const [header, payload] = form.get("assertion")!.split(".");
+    expect(
+      JSON.parse(Buffer.from(header!, "base64url").toString()),
+    ).toMatchObject({
+      alg: "RS256",
+    });
+    expect(
+      JSON.parse(Buffer.from(payload!, "base64url").toString()),
+    ).toMatchObject({
+      iss: "robot@project.iam.gserviceaccount.com",
+      scope: "https://www.googleapis.com/auth/drive",
+    });
+
+    const permission = calls.find(
+      (call) => call.method === "POST" && /\/permissions/.test(call.url),
+    );
+    expect(JSON.parse(permission!.body)).toMatchObject({
+      type: "user",
+      role: "reader",
+      emailAddress: "rina.kurnia@gmail.com",
+    });
   });
 });
 

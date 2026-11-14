@@ -29,6 +29,19 @@ if [[ -f "$STATE_FILE" ]]; then
 fi
 
 wait_healthy() {
+  local url="http://127.0.0.1:${WEB_PORT}/"
+  for _ in $(seq 1 30); do
+    if curl -fsS -m 3 -o /dev/null "$url"; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+# The portal is what a buyer sees, so it has to answer before the deploy counts. Checking
+# only /health once let a running api hide a web container that was still starting.
+wait_api() {
   local url="http://127.0.0.1:${API_PORT}/health"
   for _ in $(seq 1 30); do
     if curl -fsS -m 3 -o /dev/null "$url"; then
@@ -48,10 +61,9 @@ bring_up() {
 echo "deploying ${TAG}"
 bring_up "$TAG"
 
-if wait_healthy; then
+if wait_api && wait_healthy; then
   printf '%s\n' "$TAG" >"$STATE_FILE"
-  echo "api healthy on ${API_PORT}; portal on ${WEB_PORT}"
-  echo "web: $(curl -fsS -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${WEB_PORT}/" || echo failed)"
+  echo "api healthy on ${API_PORT}, portal answering on ${WEB_PORT}"
   exit 0
 fi
 
@@ -59,7 +71,7 @@ echo "api did not become healthy on tag ${TAG}" >&2
 if [[ -n "$previous" && "$previous" != "$TAG" ]]; then
   echo "rolling back to ${previous}" >&2
   bring_up "$previous"
-  if wait_healthy; then
+  if wait_api && wait_healthy; then
     echo "rolled back, api healthy on ${previous}" >&2
   else
     echo "rollback did not come up either; check docker compose logs api" >&2

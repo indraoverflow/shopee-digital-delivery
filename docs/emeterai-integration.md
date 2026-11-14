@@ -60,6 +60,13 @@ re-deriving them.
 | `scripts/emeterai-paths.mjs`      | which host serves which path                            | no                 |
 | `scripts/emeterai-readonly.mjs`   | a short list of read-only GETs                          | no                 |
 | `scripts/emeterai-mint.mjs [qty]` | mints one buyer link and prints the URL                 | **yes, qty units** |
+| `scripts/emeterai-balance.mts`    | balance of the account stored in settings               | no                 |
+
+`emeterai-balance.mts` is the one that reads the live account: it loads `settings.meterai`,
+decrypts the stored password and calls the balance endpoint, so a broken credential shows up as an
+error rather than at the first buyer. Point `DATABASE_URL` at the published Postgres port of the
+compose stack, not at the in-network host. A `saldo: null` answer means the dashboard replied
+without a readable body; the script is a credential smoke test, not a ledger.
 
 The credentials file may be either `email=...` / `password=...` lines or a captured
 `curl ... --data '{"data":"<blob>"}'` from the browser; both are accepted, because the blob is encrypted

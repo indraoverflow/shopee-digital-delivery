@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Automated digital product fulfilment for Shopee stores: claim portal, admin dashboard, order pipeline",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "engines": {
     "node": ">=22"

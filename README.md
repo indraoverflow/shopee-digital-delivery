@@ -271,4 +271,12 @@ key. Threat model and residual gaps in [`docs/security.md`](docs/security.md).
 
 ## License
 
-MIT.
+PolyForm Noncommercial 1.0.0, see [LICENSE](LICENSE). The short version:
+
+- you may read, run, study, change and share this software for any noncommercial purpose;
+- you may not use it, or a modified version of it, to make money, including running it as a paid
+  service, bundling it into a commercial product, or using it inside a business;
+- commercial use needs a written licence from the copyright holder, which is a separate conversation.
+
+The vendored Shopee client in `vendor/shopee-integration` keeps its own MIT licence and is unaffected:
+it is a client library, not this application.

@@ -145,9 +145,10 @@ should be sold as one.
 
 ## 10. Decisions still open
 
-1. **Licence.** `package.json` and the vendor package are MIT, which lets anyone resell this code. If the
-   SaaS is meant to be closed, the platform code needs a proprietary licence; the integration package can
-   stay MIT as an on-ramp.
+1. **Licence.** Decided: the application is PolyForm Noncommercial 1.0.0, so the source stays readable
+   while nobody may sell it or run it commercially. The vendored integration package stays MIT as an
+   on-ramp, because a client library is not the product. Commercial use of the platform therefore needs a
+   written licence, which is also what makes a paid tier meaningful.
 2. **Shopee partner status.** One partner app may serve many sellers, but the app must pass review and each
    seller authorises separately. Administrative, and it blocks selling more than it blocks coding.
 3. **Domain.** `example.com` is used in this note as a placeholder. Registration was not done; availability was

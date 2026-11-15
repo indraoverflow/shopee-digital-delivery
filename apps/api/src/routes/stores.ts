@@ -421,9 +421,14 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
       },
       "shopee callback",
     );
-    if (!code || !shopIdRaw) {
+    const mainAccountIdRaw = request.query.main_account_id;
+    if (!code || (!shopIdRaw && !mainAccountIdRaw)) {
       ctx.logger.warn(
-        { hasCode: Boolean(code), shopId: shopIdRaw ?? null },
+        {
+          hasCode: Boolean(code),
+          shopId: shopIdRaw ?? null,
+          mainAccountId: mainAccountIdRaw ?? null,
+        },
         "shopee callback incomplete",
       );
       return reply.redirect(
@@ -434,6 +439,122 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
     const shopId = Number(shopIdRaw);
     const environment =
       ctx.config.shopeeEnv === "production" ? "PRODUCTION" : "SANDBOX";
+
+    /**
+     * A main account authorises every shop under it at once, and Shopee answers
+     * with `main_account_id` instead of a shop id. The token endpoint then returns
+     * the list of shops that consent covered, so one click links them all. Without
+     * this branch the seller's only Authorize button is a dead end.
+     */
+    if (!shopIdRaw && mainAccountIdRaw) {
+      const mainAccountId = Number(mainAccountIdRaw);
+      try {
+        const token = await ctx.gateway.exchangeCode({ code, mainAccountId });
+        const shopIds = [...new Set(token.shopIdList)];
+        ctx.logger.info(
+          { mainAccountId, shopIds, merchantIdList: token.merchantIdList },
+          "shopee callback main account",
+        );
+        if (shopIds.length === 0) {
+          return reply.redirect(
+            `${ctx.config.adminOrigin}/admin/stores?error=no_shops_authorized`,
+          );
+        }
+
+        const linked: string[] = [];
+        for (const shopId of shopIds) {
+          let [store] = await ctx.db
+            .select()
+            .from(schema.shopeeStores)
+            .where(
+              and(
+                eq(schema.shopeeStores.shopId, shopId),
+                eq(schema.shopeeStores.environment, environment),
+              ),
+            )
+            .limit(1);
+          if (!store) {
+            const [created] = await ctx.db
+              .insert(schema.shopeeStores)
+              .values({
+                shopId,
+                label: `shop-${shopId}`,
+                environment,
+                status: "PENDING",
+              })
+              .returning();
+            store = created;
+            await ctx.audit({
+              actorType: "SYSTEM",
+              action: "store.create",
+              targetType: "store",
+              targetId: store?.id,
+              metadata: { shopId, environment, via: "callback_main_account" },
+            });
+          }
+          if (!store) continue;
+
+          await saveToken(ctx.deps, store.id, token);
+          let shopName: string | null = null;
+          let region: string | null = null;
+          try {
+            const info = await ctx.gateway.getShopInfo({
+              shopId,
+              accessToken: token.accessToken,
+            });
+            shopName = info.shopName ?? null;
+            region = info.region ?? null;
+          } catch (error) {
+            ctx.logger.warn(
+              {
+                shopId,
+                message: error instanceof Error ? error.message : "unknown",
+              },
+              "shopee callback shop info failed",
+            );
+          }
+          await ctx.db
+            .update(schema.shopeeStores)
+            .set({
+              status: "CONNECTED",
+              shopName: shopName ?? store.label,
+              region,
+              lastError: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.shopeeStores.id, store.id));
+          await ctx.audit({
+            actorType: "SYSTEM",
+            action: "store.authorized",
+            targetType: "store",
+            targetId: store.id,
+            ip: request.ip,
+            metadata: { mainAccountId },
+          });
+          linked.push(store.id);
+        }
+
+        return reply.redirect(
+          `${ctx.config.adminOrigin}/admin/stores${linked[0] ? `/${linked[0]}` : ""}?connected=${linked.length}`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown";
+        const code = (error as { code?: string }).code ?? null;
+        ctx.logger.error(
+          { mainAccountId, code, message },
+          "shopee callback main account exchange failed",
+        );
+        await ctx.audit({
+          actorType: "SYSTEM",
+          action: "store.authorization_failed",
+          targetType: "store",
+          metadata: { message, mainAccountId },
+        });
+        return reply.redirect(
+          `${ctx.config.adminOrigin}/admin/stores?error=exchange_failed`,
+        );
+      }
+    }
 
     /**
      * Two ways a seller arrives here. A link minted by the console carries a

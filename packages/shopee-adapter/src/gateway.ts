@@ -1,5 +1,22 @@
-import type { ItemDetail, ModelList, OrderDetail, OrderPage, ShopInfo } from "shopee-integration";
-import { ShopeeClient, ShopeeApiError, authorizationUrl, exchangeCode, getItemDetails, getItemModels, getOrderDetails, getShopInfo, listAllItems, refreshAccessToken } from "shopee-integration";
+import type {
+  ItemDetail,
+  ModelList,
+  OrderDetail,
+  OrderPage,
+  ShopInfo,
+} from "shopee-integration";
+import {
+  ShopeeClient,
+  ShopeeApiError,
+  TOKEN_PATH,
+  authorizationUrl,
+  getItemDetails,
+  getItemModels,
+  getOrderDetails,
+  getShopInfo,
+  listAllItems,
+  refreshAccessToken,
+} from "shopee-integration";
 import { DEFAULT_ORDER_FIELDS } from "shopee-integration";
 
 /**
@@ -84,19 +101,54 @@ export interface OrderWindowQuery {
 
 export interface ShopeeGateway {
   /** Authorization URL the seller opens once per store. */
-  buildAuthorizationUrl(input: { redirectUrl: string; callbackState?: string }): string;
-  exchangeCode(input: { code: string; shopId: number }): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }>;
-  refreshToken(input: { shopId: number; refreshToken: string }): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }>;
-  getShopInfo(access: StoreAccess): Promise<{ shopId: number; shopName: string | null; region: string | null; status: string | null }>;
-  listOrdersByUpdateTime(access: StoreAccess, window: OrderWindowQuery): Promise<{ orderSns: string[]; truncated: boolean }>;
-  getOrders(access: StoreAccess, orderSns: string[]): Promise<NormalisedOrder[]>;
-  listProducts(access: StoreAccess, options?: { maxPages?: number }): Promise<{ products: NormalisedProduct[]; truncated: boolean }>;
+  buildAuthorizationUrl(input: {
+    redirectUrl: string;
+    callbackState?: string;
+  }): string;
+  exchangeCode(input: {
+    code: string;
+    shopId?: number;
+    mainAccountId?: number;
+  }): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+    shopIdList: number[];
+    merchantIdList: number[];
+  }>;
+  refreshToken(input: {
+    shopId: number;
+    refreshToken: string;
+  }): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }>;
+  getShopInfo(
+    access: StoreAccess,
+  ): Promise<{
+    shopId: number;
+    shopName: string | null;
+    region: string | null;
+    status: string | null;
+  }>;
+  listOrdersByUpdateTime(
+    access: StoreAccess,
+    window: OrderWindowQuery,
+  ): Promise<{ orderSns: string[]; truncated: boolean }>;
+  getOrders(
+    access: StoreAccess,
+    orderSns: string[],
+  ): Promise<NormalisedOrder[]>;
+  listProducts(
+    access: StoreAccess,
+    options?: { maxPages?: number },
+  ): Promise<{ products: NormalisedProduct[]; truncated: boolean }>;
   /**
    * What this order's shipping channel accepts: pickup, dropoff, or a
    * non-integrated channel (the seller's own courier, "jasa kirim toko").
    * Shopee wants this consulted before ship_order.
    */
-  getShippingOptions?(access: StoreAccess, orderSn: string): Promise<ShippingOptions>;
+  getShippingOptions?(
+    access: StoreAccess,
+    orderSn: string,
+  ): Promise<ShippingOptions>;
 
   /**
    * Arranges shipment for one order, the same click the seller would make in the
@@ -113,8 +165,14 @@ export interface ShopeeGateway {
 /* --------------------------------------------------------- normalisation */
 
 const toMoney = (value: unknown): string | null => {
-  if (typeof value === "number" && Number.isFinite(value)) return value.toFixed(2);
-  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value).toFixed(2);
+  if (typeof value === "number" && Number.isFinite(value))
+    return value.toFixed(2);
+  if (
+    typeof value === "string" &&
+    value.trim() !== "" &&
+    Number.isFinite(Number(value))
+  )
+    return Number(value).toFixed(2);
   return null;
 };
 
@@ -123,7 +181,9 @@ const toDate = (unixSeconds: unknown): Date | null => {
   return new Date(unixSeconds * 1000);
 };
 
-const firstPrice = (item: ItemDetail): { min: number | null; max: number | null } => {
+const firstPrice = (
+  item: ItemDetail,
+): { min: number | null; max: number | null } => {
   const prices = (item.price_info ?? [])
     .map((entry) => entry.current_price ?? entry.original_price)
     .filter((value): value is number => typeof value === "number");
@@ -133,11 +193,15 @@ const firstPrice = (item: ItemDetail): { min: number | null; max: number | null 
 
 export function normaliseOrder(detail: OrderDetail): NormalisedOrder {
   const address = detail.recipient_address ?? {};
-  const phone = (address.phone ?? address.masked_phone ?? null) as string | null;
+  const phone = (address.phone ?? address.masked_phone ?? null) as
+    string | null;
 
   const items = (detail.item_list ?? []).map((item): NormalisedOrderItem => {
     const modelId = typeof item.model_id === "number" ? item.model_id : null;
-    const quantity = typeof item.model_quantity_purchased === "number" ? item.model_quantity_purchased : 1;
+    const quantity =
+      typeof item.model_quantity_purchased === "number"
+        ? item.model_quantity_purchased
+        : 1;
     const image = item.image_info?.image_url ?? null;
     return {
       lineKey: `${item.item_id}:${modelId ?? 0}`,
@@ -168,7 +232,10 @@ export function normaliseOrder(detail: OrderDetail): NormalisedOrder {
   };
 }
 
-export function normaliseProduct(item: ItemDetail, models: ModelList): NormalisedProduct {
+export function normaliseProduct(
+  item: ItemDetail,
+  models: ModelList,
+): NormalisedProduct {
   const price = firstPrice(item);
   const image = item.image?.image_url_list?.[0] ?? null;
 
@@ -176,7 +243,10 @@ export function normaliseProduct(item: ItemDetail, models: ModelList): Normalise
     const current = model.price_info?.[0];
     const stock =
       model.stock_info_v2?.summary_info?.total_available_stock ??
-      model.stock_info_v2?.seller_stock?.reduce((total, entry) => total + (entry.stock ?? 0), 0) ??
+      model.stock_info_v2?.seller_stock?.reduce(
+        (total, entry) => total + (entry.stock ?? 0),
+        0,
+      ) ??
       null;
     return {
       modelId: model.model_id,
@@ -229,10 +299,50 @@ export class LiveShopeeGateway implements ShopeeGateway {
     });
   }
 
-  async exchangeCode(input: { code: string; shopId: number }) {
+  /**
+   * Token exchange for both consents: a shop returns `shop_id`, a main account
+   * returns `main_account_id` plus the shops that consent covered. The vendored
+   * client only types the shop shape, so the request is built here instead of
+   * widening a package pinned by commit.
+   */
+  async exchangeCode(input: {
+    code: string;
+    shopId?: number;
+    mainAccountId?: number;
+  }) {
     try {
-      const token = await exchangeCode(this.client, this.options.partnerId, { code: input.code, shopId: input.shopId });
-      return { accessToken: token.access_token, refreshToken: token.refresh_token, expiresIn: token.expire_in };
+      const body: Record<string, unknown> = {
+        code: input.code,
+        partner_id: this.options.partnerId,
+      };
+      if (input.shopId !== undefined) body.shop_id = input.shopId;
+      if (input.mainAccountId !== undefined)
+        body.main_account_id = input.mainAccountId;
+
+      const raw = await this.client.publicPostFlat<Record<string, unknown>>(
+        TOKEN_PATH,
+        body,
+      );
+      const token =
+        (raw.response as Record<string, unknown> | undefined) ?? raw;
+      if (!token.access_token) {
+        throw new ShopeeGatewayError(
+          "error_token",
+          "token response has no access_token",
+          false,
+        );
+      }
+      const asNumbers = (value: unknown): number[] =>
+        Array.isArray(value)
+          ? value.map(Number).filter((n) => Number.isFinite(n))
+          : [];
+      return {
+        accessToken: String(token.access_token),
+        refreshToken: String(token.refresh_token ?? ""),
+        expiresIn: Number(token.expire_in ?? 0),
+        shopIdList: asNumbers(token.shop_id_list),
+        merchantIdList: asNumbers(token.merchant_id_list),
+      };
     } catch (error) {
       throw wrapShopeeError(error);
     }
@@ -240,11 +350,19 @@ export class LiveShopeeGateway implements ShopeeGateway {
 
   async refreshToken(input: { shopId: number; refreshToken: string }) {
     try {
-      const token = await refreshAccessToken(this.client, this.options.partnerId, {
-        refreshToken: input.refreshToken,
-        shopId: input.shopId,
-      });
-      return { accessToken: token.access_token, refreshToken: token.refresh_token, expiresIn: token.expire_in };
+      const token = await refreshAccessToken(
+        this.client,
+        this.options.partnerId,
+        {
+          refreshToken: input.refreshToken,
+          shopId: input.shopId,
+        },
+      );
+      return {
+        accessToken: token.access_token,
+        refreshToken: token.refresh_token,
+        expiresIn: token.expire_in,
+      };
     } catch (error) {
       throw wrapShopeeError(error);
     }
@@ -252,7 +370,10 @@ export class LiveShopeeGateway implements ShopeeGateway {
 
   async getShopInfo(access: StoreAccess) {
     try {
-      const info: ShopInfo = await getShopInfo(this.client, { accessToken: access.accessToken, shopId: access.shopId });
+      const info: ShopInfo = await getShopInfo(this.client, {
+        accessToken: access.accessToken,
+        shopId: access.shopId,
+      });
       return {
         shopId: typeof info.shop_id === "number" ? info.shop_id : access.shopId,
         shopName: info.shop_name ?? null,
@@ -282,10 +403,18 @@ export class LiveShopeeGateway implements ShopeeGateway {
     }
   }
 
-  async getOrders(access: StoreAccess, orderSns: string[]): Promise<NormalisedOrder[]> {
+  async getOrders(
+    access: StoreAccess,
+    orderSns: string[],
+  ): Promise<NormalisedOrder[]> {
     if (orderSns.length === 0) return [];
     try {
-      const details = await getOrderDetails(this.client, { accessToken: access.accessToken, shopId: access.shopId }, orderSns, DEFAULT_ORDER_FIELDS);
+      const details = await getOrderDetails(
+        this.client,
+        { accessToken: access.accessToken, shopId: access.shopId },
+        orderSns,
+        DEFAULT_ORDER_FIELDS,
+      );
       return details.map(normaliseOrder);
     } catch (error) {
       throw wrapShopeeError(error);
@@ -298,15 +427,26 @@ export class LiveShopeeGateway implements ShopeeGateway {
    * `error_logistics_not_supported`, which the caller surfaces verbatim instead of
    * pretending the order shipped.
    */
-  async getShippingOptions(access: StoreAccess, orderSn: string): Promise<ShippingOptions> {
+  async getShippingOptions(
+    access: StoreAccess,
+    orderSn: string,
+  ): Promise<ShippingOptions> {
     try {
       const response = await this.client.shopGet<{
-        info_needed?: { pickup?: string[]; dropoff?: string[]; non_integrated?: string[] };
+        info_needed?: {
+          pickup?: string[];
+          dropoff?: string[];
+          non_integrated?: string[];
+        };
         pickup?: { address_list?: Array<{ address_id: number }> };
         dropoff?: { branch_list?: Array<{ branch_id: number }> };
-      }>("/api/v2/logistics/get_shipping_parameter", { accessToken: access.accessToken, shopId: access.shopId }, {
-        order_sn: orderSn,
-      });
+      }>(
+        "/api/v2/logistics/get_shipping_parameter",
+        { accessToken: access.accessToken, shopId: access.shopId },
+        {
+          order_sn: orderSn,
+        },
+      );
 
       const info = response?.info_needed ?? {};
       const options: ShippingOptions = {};
@@ -342,7 +482,11 @@ export class LiveShopeeGateway implements ShopeeGateway {
     }
   }
 
-  async shipOrder(access: StoreAccess, orderSn: string, options: { trackingNumber?: string | null } = {}) {
+  async shipOrder(
+    access: StoreAccess,
+    orderSn: string,
+    options: { trackingNumber?: string | null } = {},
+  ) {
     try {
       const shipping = await this.getShippingOptions(access, orderSn);
       const trackingNumber = options.trackingNumber ?? "";
@@ -353,21 +497,28 @@ export class LiveShopeeGateway implements ShopeeGateway {
         body.pickup = {
           address_id: shipping.pickup.addressId,
           pickup_time_id: shipping.pickup.pickupTimeId ?? "",
-          tracking_number: shipping.pickup.needsTrackingNumber ? trackingNumber : "",
+          tracking_number: shipping.pickup.needsTrackingNumber
+            ? trackingNumber
+            : "",
         };
       }
       if (shipping.dropoff) {
         body.dropoff = {
           branch_id: shipping.dropoff.branchId ?? 0,
           sender_real_name: shipping.dropoff.senderRealName ?? "",
-          tracking_number: shipping.dropoff.needsTrackingNumber ? trackingNumber : "",
+          tracking_number: shipping.dropoff.needsTrackingNumber
+            ? trackingNumber
+            : "",
         };
       }
       if (shipping.nonIntegrated) {
         body.non_integrated = { tracking_number: trackingNumber };
       }
 
-      const response = await this.client.shopPost<{ order_sn?: string; package_number?: string }>(
+      const response = await this.client.shopPost<{
+        order_sn?: string;
+        package_number?: string;
+      }>(
         "/api/v2/logistics/ship_order",
         { accessToken: access.accessToken, shopId: access.shopId },
         body,
@@ -380,16 +531,30 @@ export class LiveShopeeGateway implements ShopeeGateway {
 
   async listProducts(access: StoreAccess, options: { maxPages?: number } = {}) {
     try {
-      const catalogue = await listAllItems(this.client, { accessToken: access.accessToken, shopId: access.shopId }, {
-        pageSize: 50,
-        ...(options.maxPages !== undefined ? { maxPages: options.maxPages } : {}),
-      });
+      const catalogue = await listAllItems(
+        this.client,
+        { accessToken: access.accessToken, shopId: access.shopId },
+        {
+          pageSize: 50,
+          ...(options.maxPages !== undefined
+            ? { maxPages: options.maxPages }
+            : {}),
+        },
+      );
       const itemIds = catalogue.items.map((entry) => entry.item_id);
-      const details = await getItemDetails(this.client, { accessToken: access.accessToken, shopId: access.shopId }, itemIds);
+      const details = await getItemDetails(
+        this.client,
+        { accessToken: access.accessToken, shopId: access.shopId },
+        itemIds,
+      );
 
       const products: NormalisedProduct[] = [];
       for (const item of details) {
-        const models = await getItemModels(this.client, { accessToken: access.accessToken, shopId: access.shopId }, item.item_id);
+        const models = await getItemModels(
+          this.client,
+          { accessToken: access.accessToken, shopId: access.shopId },
+          item.item_id,
+        );
         products.push(normaliseProduct(item, models));
       }
       return { products, truncated: catalogue.truncated };
@@ -420,8 +585,16 @@ export class ShopeeGatewayError extends Error {
  * is what a digital shop uses, and it needs a tracking number the seller assigns.
  */
 export interface ShippingOptions {
-  pickup?: { addressId: number; pickupTimeId: string | null; needsTrackingNumber: boolean };
-  dropoff?: { branchId: number | null; senderRealName: string | null; needsTrackingNumber: boolean };
+  pickup?: {
+    addressId: number;
+    pickupTimeId: string | null;
+    needsTrackingNumber: boolean;
+  };
+  dropoff?: {
+    branchId: number | null;
+    senderRealName: string | null;
+    needsTrackingNumber: boolean;
+  };
   nonIntegrated?: { needsTrackingNumber: boolean };
 }
 
@@ -429,7 +602,9 @@ export function wrapShopeeError(error: unknown): Error {
   if (error instanceof ShopeeApiError) {
     // 4xx-style API errors (invalid signature, expired token) are not retryable;
     // a bare network failure is.
-    const retryable = /network|fetch|ECONN|ETIMEDOUT|timeout/i.test(String(error.message));
+    const retryable = /network|fetch|ECONN|ETIMEDOUT|timeout/i.test(
+      String(error.message),
+    );
     return new ShopeeGatewayError(String(error.code), error.message, retryable);
   }
   return error instanceof Error ? error : new Error(String(error));
@@ -480,7 +655,13 @@ export interface FixtureProduct {
   status?: string;
   image_url?: string;
   price?: number;
-  models?: Array<{ model_id: number; model_name: string; price?: number; stock?: number; sku?: string }>;
+  models?: Array<{
+    model_id: number;
+    model_name: string;
+    price?: number;
+    stock?: number;
+    sku?: string;
+  }>;
 }
 
 /**
@@ -507,13 +688,21 @@ export class FixtureShopeeGateway implements ShopeeGateway {
     return `${base}/api/v2/shop/auth_partner?${params.toString()}`;
   }
 
-  async exchangeCode(input: { code: string; shopId: number }) {
+  async exchangeCode(input: {
+    code: string;
+    shopId?: number;
+    mainAccountId?: number;
+  }) {
     this.maybeFail("exchangeCode");
-    if (input.code.trim() === "") throw new ShopeeGatewayError("error_param", "empty code", false);
+    if (input.code.trim() === "")
+      throw new ShopeeGatewayError("error_param", "empty code", false);
     return {
-      accessToken: `fixture-access-${input.shopId}`,
-      refreshToken: `fixture-refresh-${input.shopId}`,
+      accessToken: `fixture-access-${input.shopId ?? input.mainAccountId ?? 0}`,
+      refreshToken: `fixture-refresh-${input.shopId ?? input.mainAccountId ?? 0}`,
       expiresIn: 14_400,
+      shopIdList: input.shopId !== undefined ? [input.shopId] : [],
+      merchantIdList:
+        input.mainAccountId !== undefined ? [input.mainAccountId] : [],
     };
   }
 
@@ -544,28 +733,64 @@ export class FixtureShopeeGateway implements ShopeeGateway {
    * which is why a fixture order can revert on the next reconciliation. Live mode
    * has no such problem: Shopee is the source of truth and it keeps the shipment.
    */
-  async getShippingOptions(access: StoreAccess, orderSn: string): Promise<ShippingOptions> {
+  async getShippingOptions(
+    access: StoreAccess,
+    orderSn: string,
+  ): Promise<ShippingOptions> {
     this.maybeFail("getShippingOptions");
     const store = this.store(access.shopId);
-    const order = (store.orders ?? []).find((entry) => entry.order_sn === orderSn);
-    if (!order) throw new ShopeeGatewayError("error_order_not_exist", `order ${orderSn} not found`, false);
+    const order = (store.orders ?? []).find(
+      (entry) => entry.order_sn === orderSn,
+    );
+    if (!order)
+      throw new ShopeeGatewayError(
+        "error_order_not_exist",
+        `order ${orderSn} not found`,
+        false,
+      );
 
     if ((order.logistics ?? "non_integrated") === "integrated") {
-      return { pickup: { addressId: 9001, pickupTimeId: null, needsTrackingNumber: false } };
+      return {
+        pickup: {
+          addressId: 9001,
+          pickupTimeId: null,
+          needsTrackingNumber: false,
+        },
+      };
     }
     return { nonIntegrated: { needsTrackingNumber: true } };
   }
 
-  async shipOrder(access: StoreAccess, orderSn: string, options: { trackingNumber?: string | null } = {}) {
+  async shipOrder(
+    access: StoreAccess,
+    orderSn: string,
+    options: { trackingNumber?: string | null } = {},
+  ) {
     this.maybeFail("shipOrder");
     const store = this.store(access.shopId);
-    const order = (store.orders ?? []).find((entry) => entry.order_sn === orderSn);
-    if (!order) throw new ShopeeGatewayError("error_order_not_exist", `order ${orderSn} not found`, false);
-    if (!["READY_TO_SHIP", "PROCESSED"].includes(order.order_status.toUpperCase())) {
-      throw new ShopeeGatewayError("error_order_status", `order ${orderSn} is ${order.order_status}`, false);
+    const order = (store.orders ?? []).find(
+      (entry) => entry.order_sn === orderSn,
+    );
+    if (!order)
+      throw new ShopeeGatewayError(
+        "error_order_not_exist",
+        `order ${orderSn} not found`,
+        false,
+      );
+    if (
+      !["READY_TO_SHIP", "PROCESSED"].includes(order.order_status.toUpperCase())
+    ) {
+      throw new ShopeeGatewayError(
+        "error_order_status",
+        `order ${orderSn} is ${order.order_status}`,
+        false,
+      );
     }
     const trackingNumber = options.trackingNumber?.trim() ?? "";
-    if ((order.logistics ?? "non_integrated") === "non_integrated" && trackingNumber === "") {
+    if (
+      (order.logistics ?? "non_integrated") === "non_integrated" &&
+      trackingNumber === ""
+    ) {
       throw new ShopeeGatewayError(
         "logistics.error_param",
         "non-integrated channel requires a tracking number",
@@ -590,7 +815,10 @@ export class FixtureShopeeGateway implements ShopeeGateway {
     return { orderSns, truncated: false };
   }
 
-  async getOrders(access: StoreAccess, orderSns: string[]): Promise<NormalisedOrder[]> {
+  async getOrders(
+    access: StoreAccess,
+    orderSns: string[],
+  ): Promise<NormalisedOrder[]> {
     this.maybeFail("getOrders");
     const store = this.store(access.shopId);
     return orderSns
@@ -601,12 +829,19 @@ export class FixtureShopeeGateway implements ShopeeGateway {
         status: order.order_status.toUpperCase(),
         buyerUsername: order.buyer_username ?? null,
         buyerPhoneMasked: order.recipient_phone ?? null,
-        totalAmount: order.total_amount !== undefined ? order.total_amount.toFixed(2) : null,
+        totalAmount:
+          order.total_amount !== undefined
+            ? order.total_amount.toFixed(2)
+            : null,
         currency: order.currency ?? "IDR",
         paymentMethod: order.payment_method ?? "ShopeePay",
         messageToSeller: null,
-        createTime: order.create_time ? new Date(order.create_time * 1000) : null,
-        updateTime: order.update_time ? new Date(order.update_time * 1000) : null,
+        createTime: order.create_time
+          ? new Date(order.create_time * 1000)
+          : null,
+        updateTime: order.update_time
+          ? new Date(order.update_time * 1000)
+          : null,
         items: order.items.map((item) => ({
           lineKey: `${item.item_id}:${item.model_id ?? 0}`,
           itemId: item.item_id,
@@ -625,36 +860,47 @@ export class FixtureShopeeGateway implements ShopeeGateway {
   async listProducts(access: StoreAccess) {
     this.maybeFail("listProducts");
     const store = this.store(access.shopId);
-    const products: NormalisedProduct[] = (store.products ?? []).map((product) => ({
-      itemId: product.item_id,
-      name: product.item_name,
-      status: product.status ?? "NORMAL",
-      imageUrl: product.image_url ?? null,
-      hasModel: (product.models ?? []).length > 0,
-      priceMin: product.price !== undefined ? product.price.toFixed(2) : null,
-      priceMax: product.price !== undefined ? product.price.toFixed(2) : null,
-      raw: product as unknown as Record<string, unknown>,
-      variations: (product.models ?? []).map((model) => ({
-        modelId: model.model_id,
-        name: model.model_name,
-        sku: model.sku ?? null,
-        price: model.price !== undefined ? model.price.toFixed(2) : null,
-        stock: model.stock ?? null,
-        raw: model as unknown as Record<string, unknown>,
-      })),
-    }));
+    const products: NormalisedProduct[] = (store.products ?? []).map(
+      (product) => ({
+        itemId: product.item_id,
+        name: product.item_name,
+        status: product.status ?? "NORMAL",
+        imageUrl: product.image_url ?? null,
+        hasModel: (product.models ?? []).length > 0,
+        priceMin: product.price !== undefined ? product.price.toFixed(2) : null,
+        priceMax: product.price !== undefined ? product.price.toFixed(2) : null,
+        raw: product as unknown as Record<string, unknown>,
+        variations: (product.models ?? []).map((model) => ({
+          modelId: model.model_id,
+          name: model.model_name,
+          sku: model.sku ?? null,
+          price: model.price !== undefined ? model.price.toFixed(2) : null,
+          stock: model.stock ?? null,
+          raw: model as unknown as Record<string, unknown>,
+        })),
+      }),
+    );
     return { products, truncated: false };
   }
 
   private store(shopId: number): FixtureStore {
     const store = this.stores.find((entry) => entry.shopId === shopId);
-    if (!store) throw new ShopeeGatewayError("shop_not_found", `no fixture store ${shopId}`, false);
+    if (!store)
+      throw new ShopeeGatewayError(
+        "shop_not_found",
+        `no fixture store ${shopId}`,
+        false,
+      );
     return store;
   }
 
   private maybeFail(operation: string): void {
     if (this.options.failOn?.includes(operation)) {
-      throw new ShopeeGatewayError("fixture_failure", `fixture failure on ${operation}`, true);
+      throw new ShopeeGatewayError(
+        "fixture_failure",
+        `fixture failure on ${operation}`,
+        true,
+      );
     }
   }
 }

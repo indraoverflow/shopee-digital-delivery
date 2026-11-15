@@ -8,14 +8,20 @@ Ordered by what would hurt first.
 
 ## 1. Live Shopee credentials and app approval
 
-**EXTERNAL DEPENDENCY**
+**CLOSED for credentials and data access; shipping still open (see item 7)**
 
-Without `SHOPEE_PARTNER_ID` and `SHOPEE_PARTNER_KEY` (and an approved app that carries the Order,
-Product and Logistics modules) the platform cannot leave fixture mode. No amount of code work closes
-this.
+Live partner id 2044130, a 64-character partner key, redirect `https://api.serah.id` and the PII
+Necessity Declaration with the server's egress IP declared are all in place, and the main api process
+now runs `SHOPEE_GATEWAY_MODE=live` with `SHOPEE_ENV=production`.
 
-Closed when: `docs/live-shopee-checklist.md` section 6 has been run end to end, including the Seller
-Centre check that a real order moved to **Dikirim**.
+A main-account consent returns `code` + `main_account_id` and no shop id, so the callback exchanges the
+code against the main account, reads `shop_id_list` and links every authorised shop. Four production
+shops are connected this way.
+
+Verified on real orders: `order/get_order_detail` returns a 12-13 digit recipient phone (unmasked) for
+the shops the declaration covers; orders in markets outside it still answer `**`.
+
+Still open: one real `ship_order` (item 7).
 
 ## 2. Second factor on the owner account
 

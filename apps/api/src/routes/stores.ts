@@ -416,6 +416,8 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
         hasCode: Boolean(code),
         hasState: Boolean(state),
         shopId: shopIdRaw ?? null,
+        mainAccountId: request.query.main_account_id ?? null,
+        queryKeys: Object.keys(request.query),
       },
       "shopee callback",
     );

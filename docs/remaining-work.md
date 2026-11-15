@@ -130,3 +130,13 @@ on is 660 rather than 822.
 `scripts/shopee-category-report.mts` prints the category tree behind those ids for a shop; it is what
 turned the 822 into the table above. Mapping itself stays manual: a listing needs its own digital product
 with an asset before a paid order can be delivered.
+
+All 660 software listings now have a mapping to a DRAFT product, created by
+`scripts/map-digital-listings.sh draft` (name and slug from the listing, delivery kind `LINK`, no asset
+yet). That empties the unmapped counter but moves the work rather than removing it: an order mapped to a
+DRAFT product stops at `PRODUCT_NOT_ACTIVE`, so monitoring now raises `PRODUCT_NOT_ACTIVE` with the number
+of products still waiting for an asset.
+
+What is left for the operator, per listing: fill `external_url` (or upload a file), then set the product
+to `ACTIVE`. Anything not sold through the portal can be archived instead, which removes it from delivery
+without touching the Shopee listing.

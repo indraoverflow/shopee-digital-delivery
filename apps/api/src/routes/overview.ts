@@ -120,6 +120,22 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null and ${isDigital}`,
       );
 
+    // Mapped is not the same as ready: a listing whose product is still DRAFT stops
+    // an order at PRODUCT_NOT_ACTIVE, which looks like nothing is wrong until a
+    // buyer cannot claim. Count those separately.
+    const [inactiveProducts] = await db
+      .select({
+        total: sql<number>`count(distinct ${schema.productMappings.digitalProductId})`,
+      })
+      .from(schema.productMappings)
+      .innerJoin(
+        schema.digitalProducts,
+        sql`${schema.digitalProducts.id} = ${schema.productMappings.digitalProductId}`,
+      )
+      .where(
+        sql`${schema.productMappings.isActive} = true and ${schema.digitalProducts.status} <> 'ACTIVE'`,
+      );
+
     const [ignoredListings] = await db
       .select({ total: sql<number>`count(*)` })
       .from(schema.shopeeProducts)
@@ -198,6 +214,7 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         digital: Number(digital?.total ?? 0),
         unmappedListings: Number(unmappedListings?.total ?? 0),
         ignoredListings: Number(ignoredListings?.total ?? 0),
+        inactiveProducts: Number(inactiveProducts?.total ?? 0),
       },
       orders: {
         total: Number(orderStats?.total ?? 0),
@@ -373,6 +390,19 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         )
       : null;
 
+    const [inactiveProducts] = await db
+      .select({
+        total: sql<number>`count(distinct ${schema.productMappings.digitalProductId})`,
+      })
+      .from(schema.productMappings)
+      .innerJoin(
+        schema.digitalProducts,
+        sql`${schema.digitalProducts.id} = ${schema.productMappings.digitalProductId}`,
+      )
+      .where(
+        sql`${schema.productMappings.isActive} = true and ${schema.digitalProducts.status} <> 'ACTIVE'`,
+      );
+
     const attempts = await recentClaimAttempts(ctx.deps, 10);
 
     const alerts: Array<{
@@ -406,6 +436,13 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
           ignored > 0
             ? `${unmappedListings?.total} produk digital belum dipetakan, ${ignored} listing non-digital diabaikan`
             : `${unmappedListings?.total} produk digital belum dipetakan`,
+      });
+    }
+    if (Number(inactiveProducts?.total ?? 0) > 0) {
+      alerts.push({
+        level: "warning",
+        code: "PRODUCT_NOT_ACTIVE",
+        message: `${inactiveProducts?.total} produk digital sudah dipetakan tapi belum aktif, pesanan pembelinya akan tertahan`,
       });
     }
     const expiring = tokenHealth.filter(

@@ -46,6 +46,7 @@ interface Overview {
     digital: number;
     unmappedListings: number;
     ignoredListings?: number;
+    inactiveProducts?: number;
   };
   orders: {
     total: number;

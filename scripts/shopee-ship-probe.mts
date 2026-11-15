@@ -15,7 +15,14 @@ import { readFileSync } from "node:fs";
 import { decryptSecret } from "../packages/core/src/crypto.ts";
 import { createGateway } from "../packages/shopee-adapter/src/index.ts";
 
-const input = JSON.parse(readFileSync(0, "utf8")) as {
+const raw = readFileSync(0, "utf8").trim();
+if (!raw) {
+  console.log(
+    "no ready-to-ship order found for this environment; nothing to probe",
+  );
+  process.exit(0);
+}
+const input = JSON.parse(raw) as {
   shopId: number;
   orderSn: string;
   access: string;

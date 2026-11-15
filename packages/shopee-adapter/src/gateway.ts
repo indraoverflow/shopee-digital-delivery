@@ -8,6 +8,7 @@ import type {
 import {
   ShopeeClient,
   ShopeeApiError,
+  REFRESH_PATH,
   TOKEN_PATH,
   authorizationUrl,
   getItemDetails,
@@ -117,7 +118,8 @@ export interface ShopeeGateway {
     merchantIdList: number[];
   }>;
   refreshToken(input: {
-    shopId: number;
+    shopId?: number;
+    mainAccountId?: number;
     refreshToken: string;
   }): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }>;
   getShopInfo(
@@ -348,20 +350,28 @@ export class LiveShopeeGateway implements ShopeeGateway {
     }
   }
 
-  async refreshToken(input: { shopId: number; refreshToken: string }) {
+  /**
+   * A token issued for a main account is refreshed against that main account; a
+   * shop id there answers an error that reads like an expired refresh token.
+   */
+  async refreshToken(input: { shopId?: number; mainAccountId?: number; refreshToken: string }) {
     try {
-      const token = await refreshAccessToken(
-        this.client,
-        this.options.partnerId,
-        {
-          refreshToken: input.refreshToken,
-          shopId: input.shopId,
-        },
-      );
+      const body: Record<string, unknown> = {
+        refresh_token: input.refreshToken,
+        partner_id: this.options.partnerId,
+      };
+      if (input.mainAccountId !== undefined) body.main_account_id = input.mainAccountId;
+      else if (input.shopId !== undefined) body.shop_id = input.shopId;
+
+      const raw = await this.client.publicPostFlat<Record<string, unknown>>(REFRESH_PATH, body);
+      const token = (raw.response as Record<string, unknown> | undefined) ?? raw;
+      if (!token.access_token) {
+        throw new ShopeeGatewayError("error_token", "refresh response has no access_token", false);
+      }
       return {
-        accessToken: token.access_token,
-        refreshToken: token.refresh_token,
-        expiresIn: token.expire_in,
+        accessToken: String(token.access_token),
+        refreshToken: String(token.refresh_token ?? ""),
+        expiresIn: Number(token.expire_in ?? 0),
       };
     } catch (error) {
       throw wrapShopeeError(error);
@@ -706,11 +716,11 @@ export class FixtureShopeeGateway implements ShopeeGateway {
     };
   }
 
-  async refreshToken(input: { shopId: number }) {
+  async refreshToken(input: { shopId?: number; mainAccountId?: number; refreshToken: string }) {
     this.maybeFail("refreshToken");
     return {
-      accessToken: `fixture-access-${input.shopId}-${Date.now()}`,
-      refreshToken: `fixture-refresh-${input.shopId}-${Date.now()}`,
+      accessToken: `fixture-access-${input.shopId ?? input.mainAccountId ?? 0}-${Date.now()}`,
+      refreshToken: `fixture-refresh-${input.shopId ?? input.mainAccountId ?? 0}-${Date.now()}`,
       expiresIn: 14_400,
     };
   }

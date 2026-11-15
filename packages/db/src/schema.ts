@@ -213,6 +213,12 @@ export const shopeeStores = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     /** Shopee shop id; unique together with the environment. */
     shopId: bigint("shop_id", { mode: "number" }).notNull(),
+    /**
+     * Set when the seller authorised as a main account. Its token must be
+     * refreshed against the main account, not the shop, so the value has to
+     * survive the consent.
+     */
+    mainAccountId: bigint("main_account_id", { mode: "number" }),
     label: text("label").notNull(),
     shopName: text("shop_name"),
     region: text("region"),

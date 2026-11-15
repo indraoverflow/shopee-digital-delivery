@@ -119,10 +119,13 @@ export async function getStoreAccess(
     deps.config.appEncryptionKey,
   );
   try {
-    const refreshed = await deps.gateway.refreshToken({
-      shopId: store.shopId,
-      refreshToken,
-    });
+    // A main-account token is refreshed against the main account; sending the
+    // shop id there is answered as an invalid refresh token.
+    const refreshed = await deps.gateway.refreshToken(
+      store.mainAccountId !== null && store.mainAccountId !== undefined
+        ? { mainAccountId: store.mainAccountId, refreshToken }
+        : { shopId: store.shopId, refreshToken },
+    );
     const expiresAt = await saveToken(deps, storeId, refreshed);
     if (store.status !== "CONNECTED") {
       await deps.db

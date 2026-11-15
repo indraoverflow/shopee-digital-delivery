@@ -1,0 +1,1 @@
+ALTER TABLE "shopee_stores" ADD COLUMN "main_account_id" bigint;

@@ -481,6 +481,7 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
                 label: `shop-${shopId}`,
                 environment,
                 status: "PENDING",
+                mainAccountId,
               })
               .returning();
             store = created;

@@ -649,7 +649,29 @@ export async function grantDriveAccess(
   const now = nowOf(deps);
   let correctedFrom: string | null = null;
 
-  if (existing?.status === "GRANTED" && existing.email === email) {
+  // The same address on a different file means the product was re-pointed. The old
+  // permission belongs to the file that was replaced, so it goes first; answering
+  // "already granted" here would leave the buyer holding access to the wrong file.
+  if (
+    existing?.status === "GRANTED" &&
+    existing.email === email &&
+    existing.fileId !== fileId
+  ) {
+    if (existing.permissionId) {
+      const oldToken = await accessTokenFor(deps, fulfillment.storeId);
+      await deletePermission(oldToken, existing.fileId, existing.permissionId);
+    }
+    await deps.db
+      .update(schema.driveGrants)
+      .set({ status: "REVOKED", revokedAt: now, updatedAt: now })
+      .where(eq(schema.driveGrants.id, existing.id));
+  }
+
+  if (
+    existing?.status === "GRANTED" &&
+    existing.email === email &&
+    existing.fileId === fileId
+  ) {
     const fixUntil = new Date(
       existing.grantedAt!.getTime() + fixWindowMinutes() * 60_000,
     );

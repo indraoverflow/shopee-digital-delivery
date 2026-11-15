@@ -53,6 +53,9 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-qansa}:${POSTGRES_PASSWORD:-qansa}@postgres:5432/${POSTGRES_DB:-qansa_delivery}
       MIGRATIONS_DIR: /app/migrations
+      # The key lives outside the image; the path inside the container is fixed so
+      # the same value works for api and worker, and the host path stays configurable.
+      GOOGLE_SERVICE_ACCOUNT_FILE: /data/secrets/gdrive-service-account.json
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -60,6 +63,7 @@ services:
         condition: service_healthy
     volumes:
       - uploads:/data/uploads
+      - ${GOOGLE_SERVICE_ACCOUNT_HOST_FILE:-/home/apps/.gdrive-service-account.json}:/data/secrets/gdrive-service-account.json:ro
     ports:
       - "127.0.0.1:${API_HOST_PORT:-4000}:4000"
     healthcheck:
@@ -79,6 +83,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-qansa}:${POSTGRES_PASSWORD:-qansa}@postgres:5432/${POSTGRES_DB:-qansa_delivery}
       MIGRATIONS_DIR: /app/migrations
+      GOOGLE_SERVICE_ACCOUNT_FILE: /data/secrets/gdrive-service-account.json
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -86,6 +91,7 @@ services:
         condition: service_healthy
     volumes:
       - uploads:/data/uploads
+      - ${GOOGLE_SERVICE_ACCOUNT_HOST_FILE:-/home/apps/.gdrive-service-account.json}:/data/secrets/gdrive-service-account.json:ro
 
   web:
     build:

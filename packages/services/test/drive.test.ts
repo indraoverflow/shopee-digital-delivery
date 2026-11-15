@@ -383,6 +383,46 @@ describe("sharing a Drive file with a buyer", () => {
     ).toHaveLength(1);
   });
 
+  it("moves the grant when the product points at a different file", async () => {
+    await connectStore();
+    const { product, fulfillment, token } = await seedDriveFulfillment();
+    const input = {
+      token,
+      fulfillmentId: fulfillment.id,
+      email: "rina@gmail.com",
+      emailConfirm: "rina@gmail.com",
+    };
+
+    await grantDriveAccess(h.deps, input);
+
+    // The operator replaces the file behind the product. Answering "already" here
+    // would leave the buyer with access to the file that was replaced.
+    await h.db.db
+      .update(schema.digitalProducts)
+      .set({
+        externalUrl: "https://drive.google.com/file/d/SECONDFILE999/view",
+      })
+      .where(eq(schema.digitalProducts.id, product.id));
+
+    const again = await grantDriveAccess(h.deps, input);
+    expect(again.already).toBe(false);
+
+    const deletes = calls.filter(
+      (call) => call.method === "DELETE" && call.url.includes("/permissions/"),
+    );
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]!.url).toContain(extractDriveFileId(FILE_URL)!);
+
+    const grants = await h.db.db
+      .select()
+      .from(schema.driveGrants)
+      .where(eq(schema.driveGrants.fulfillmentId, fulfillment.id));
+    expect(grants.map((grant) => grant.status).sort()).toEqual([
+      "GRANTED",
+      "REVOKED",
+    ]);
+  });
+
   it("fixes a typo inside the window by revoking the wrong address first", async () => {
     await connectStore();
     const { fulfillment, token } = await seedDriveFulfillment();

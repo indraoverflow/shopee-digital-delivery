@@ -75,14 +75,18 @@ Closed: nginx removed from the documented topology. The Cloudflare Tunnel target
 
 ## 7. Resi format accepted by jasa kirim toko
 
-**LOW / EXTERNAL DEPENDENCY**
+**LOW / WAITING FOR A SHIPPABLE ORDER**
 
 The platform ships with `DIGITAL-<order_sn>` as the tracking number. Shopee documents that field as
-"assigned by the shipping carrier", so a placeholder may be refused for some channels. This cannot be
-settled without a live call.
+"assigned by the shipping carrier", so a placeholder may be refused for some channels.
 
-Closes when: one real `ship_order` with a placeholder resi returns `ship_order` success, or the decision
-is made to keep shipping manual and the auto-ship switch is turned off.
+`scripts/shopee-ship-probe.mts` asks the order what its channel accepts and, with `--ship --yes`, sends
+the placeholder resi. Run against a real order today it answers `error_param` because every production
+order is already past the shipping step (shipped, completed or cancelled); there is nothing in
+`READY_TO_SHIP` to test with.
+
+Closes when: the next paid order reaches `READY_TO_SHIP` and the probe returns `ship_order` success, or
+the auto-ship switch is turned off and shipping stays manual.
 
 ## 8. Multi-tenant SaaS, if that is the direction
 

@@ -110,3 +110,23 @@ The demo listing is mapped, but every new listing still starts unmapped. Monitor
 `UNMAPPED_LISTINGS`, and an unmapped paid order stops at `VALIDATED`, so nothing is delivered silently.
 
 Closed by process, not code: map new listings as part of publishing them.
+
+### Catalogue breakdown after the live connection
+
+The four production shops sync 822 listings, and only 5 mappings exist (all from the sandbox demo), so
+the dashboard used to report all 822 as unmapped work. Most of that pile is not digital:
+
+| shop                      | listings | software (101937) | other |
+| ------------------------- | -------- | ----------------- | ----- |
+| 1423696590 digistore apps | 291      | 285               | 6     |
+| 1787682915 PixelBloom.Id  | 380      | 227               | 153   |
+| 1648711865 digistoreid.sg | 100      | 97                | 3     |
+| 1648711869 digistoreid.ph | 51       | 51                | 0     |
+
+`UNMAPPED_LISTINGS` now counts only the categories listed in `DIGITAL_CATEGORY_IDS` (default `101937`,
+"Komputer & Aksesoris > Software" in ID, SG and PH) and reports the rest as ignored, so the number to act
+on is 660 rather than 822.
+
+`scripts/shopee-category-report.mts` prints the category tree behind those ids for a shop; it is what
+turned the 822 into the table above. Mapping itself stays manual: a listing needs its own digital product
+with an asset before a paid order can be delivered.

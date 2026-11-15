@@ -94,6 +94,21 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
       .from(schema.orderItems)
       .where(sql`${schema.orderItems.mappingStatus} <> 'MAPPED'`);
 
+    // A shop's catalogue is wider than what the portal delivers: envelopes,
+    // batteries and pens sync in next to the software. Counting those as unmapped
+    // work buries the listings that do need a mapping, so only the configured
+    // digital categories are reported and the rest are counted apart.
+    // Only digits reach the SQL text: the list comes from the environment, and a
+    // bound array parameter is not accepted by the driver on this path.
+    const digitalCategories = (process.env.DIGITAL_CATEGORY_IDS ?? "101937")
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => /^[0-9]+$/.test(value));
+    const isDigital =
+      digitalCategories.length > 0
+        ? sql`(${schema.shopeeProducts.raw} ->> 'category_id') = any('{${sql.raw(digitalCategories.join(","))}}'::text[])`
+        : sql`false`;
+
     const [unmappedListings] = await db
       .select({ total: sql<number>`count(*)` })
       .from(schema.shopeeProducts)
@@ -102,7 +117,18 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         sql`${schema.productMappings.shopeeProductId} = ${schema.shopeeProducts.id}`,
       )
       .where(
-        sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null`,
+        sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null and ${isDigital}`,
+      );
+
+    const [ignoredListings] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.shopeeProducts)
+      .leftJoin(
+        schema.productMappings,
+        sql`${schema.productMappings.shopeeProductId} = ${schema.shopeeProducts.id}`,
+      )
+      .where(
+        sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null and not ${isDigital}`,
       );
 
     const orderSeries = await db
@@ -171,6 +197,7 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         shopee: Number(products?.total ?? 0),
         digital: Number(digital?.total ?? 0),
         unmappedListings: Number(unmappedListings?.total ?? 0),
+        ignoredListings: Number(ignoredListings?.total ?? 0),
       },
       orders: {
         total: Number(orderStats?.total ?? 0),
@@ -278,6 +305,21 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
       .from(schema.orderItems)
       .where(sql`${schema.orderItems.mappingStatus} <> 'MAPPED'`);
 
+    // A shop's catalogue is wider than what the portal delivers: envelopes,
+    // batteries and pens sync in next to the software. Counting those as unmapped
+    // work buries the listings that do need a mapping, so only the configured
+    // digital categories are reported and the rest are counted apart.
+    // Only digits reach the SQL text: the list comes from the environment, and a
+    // bound array parameter is not accepted by the driver on this path.
+    const digitalCategories = (process.env.DIGITAL_CATEGORY_IDS ?? "101937")
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => /^[0-9]+$/.test(value));
+    const isDigital =
+      digitalCategories.length > 0
+        ? sql`(${schema.shopeeProducts.raw} ->> 'category_id') = any('{${sql.raw(digitalCategories.join(","))}}'::text[])`
+        : sql`false`;
+
     const [unmappedListings] = await db
       .select({ total: sql<number>`count(*)` })
       .from(schema.shopeeProducts)
@@ -286,7 +328,18 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         sql`${schema.productMappings.shopeeProductId} = ${schema.shopeeProducts.id}`,
       )
       .where(
-        sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null`,
+        sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null and ${isDigital}`,
+      );
+
+    const [ignoredListings] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.shopeeProducts)
+      .leftJoin(
+        schema.productMappings,
+        sql`${schema.productMappings.shopeeProductId} = ${schema.shopeeProducts.id}`,
+      )
+      .where(
+        sql`${schema.shopeeProducts.deletedAt} is null and ${schema.productMappings.id} is null and not ${isDigital}`,
       );
 
     /**
@@ -345,10 +398,14 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         message: `${queue.dead} job berhenti di dead letter`,
       });
     if (Number(unmappedListings?.total ?? 0) > 0) {
+      const ignored = Number(ignoredListings?.total ?? 0);
       alerts.push({
         level: "warning",
         code: "UNMAPPED_LISTINGS",
-        message: `${unmappedListings?.total} produk Shopee belum dipetakan`,
+        message:
+          ignored > 0
+            ? `${unmappedListings?.total} produk digital belum dipetakan, ${ignored} listing non-digital diabaikan`
+            : `${unmappedListings?.total} produk digital belum dipetakan`,
       });
     }
     const expiring = tokenHealth.filter(

@@ -36,11 +36,11 @@ fi
 
 wait_healthy() {
   local url="http://127.0.0.1:${WEB_PORT}/"
-  for _ in $(seq 1 30); do
-    if curl -fsS -m 3 -o /dev/null "$url"; then
+  for _ in $(seq 1 60); do
+    if curl -fsS -m 5 -o /dev/null "$url"; then
       return 0
     fi
-    sleep 2
+    sleep 3
   done
   return 1
 }
@@ -66,6 +66,9 @@ bring_up() {
 
 echo "deploying ${TAG}"
 bring_up "$TAG"
+
+# Give containers a moment to start before health checks begin
+sleep 5
 
 if wait_api && wait_healthy; then
   printf '%s\n' "$TAG" >"$STATE_FILE"

@@ -419,9 +419,9 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
       },
       "shopee callback",
     );
-    if (!code || !shopIdRaw || !state) {
+    if (!code || !shopIdRaw) {
       ctx.logger.warn(
-        { hasCode: Boolean(code), hasState: Boolean(state) },
+        { hasCode: Boolean(code), shopId: shopIdRaw ?? null },
         "shopee callback incomplete",
       );
       return reply.redirect(
@@ -429,41 +429,73 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
       );
     }
 
-    let storeId: string;
-    try {
-      storeId = readAuthorizeState(ctx.config, state);
-    } catch {
-      ctx.logger.warn({}, "shopee callback state invalid");
-      return reply.redirect(
-        `${ctx.config.adminOrigin}/admin/stores?error=state_invalid`,
-      );
+    const shopId = Number(shopIdRaw);
+    const environment =
+      ctx.config.shopeeEnv === "production" ? "PRODUCTION" : "SANDBOX";
+
+    /**
+     * Two ways a seller arrives here. A link minted by the console carries a
+     * signed state that names the store row; Shopee's own Authorize button on the
+     * app page carries only code and shop_id. Refusing the second one turned the
+     * only button a seller actually presses into `callback_incomplete`, so the
+     * shop id is the identity now and state is used when it is present.
+     */
+    let statedStoreId: string | null = null;
+    if (state) {
+      try {
+        statedStoreId = readAuthorizeState(ctx.config, state);
+      } catch {
+        ctx.logger.warn(
+          { shopId },
+          "shopee callback state invalid, falling back to shop id",
+        );
+      }
     }
 
-    const shopId = Number(shopIdRaw);
+    let landedStoreId: string | null = null;
     try {
-      const [store] = await ctx.db
+      let [store] = await ctx.db
         .select()
         .from(schema.shopeeStores)
-        .where(eq(schema.shopeeStores.id, storeId))
+        .where(
+          and(
+            eq(schema.shopeeStores.shopId, shopId),
+            eq(schema.shopeeStores.environment, environment),
+          ),
+        )
         .limit(1);
+
+      if (!store && statedStoreId) {
+        const [stated] = await ctx.db
+          .select()
+          .from(schema.shopeeStores)
+          .where(eq(schema.shopeeStores.id, statedStoreId))
+          .limit(1);
+        if (stated && stated.shopId === shopId) store = stated;
+      }
+
       if (!store) {
-        ctx.logger.warn(
-          { storeId, shopId },
-          "shopee callback for an unknown store",
+        const label = `shop-${shopId}`;
+        const [created] = await ctx.db
+          .insert(schema.shopeeStores)
+          .values({ shopId, label, environment, status: "PENDING" })
+          .returning();
+        store = created;
+        ctx.logger.info(
+          { shopId, environment, storeId: store?.id },
+          "shopee callback created store",
         );
-        return reply.redirect(
-          `${ctx.config.adminOrigin}/admin/stores?error=store_missing`,
-        );
+        await ctx.audit({
+          actorType: "SYSTEM",
+          action: "store.create",
+          targetType: "store",
+          targetId: store?.id,
+          metadata: { shopId, environment, via: "callback" },
+        });
       }
-      if (store.shopId !== shopId) {
-        ctx.logger.warn(
-          { storeId, expectedShopId: store.shopId, shopId },
-          "shopee callback shop does not match the store",
-        );
-        return reply.redirect(
-          `${ctx.config.adminOrigin}/admin/stores?error=shop_mismatch`,
-        );
-      }
+
+      if (!store) throw new Error("store row could not be resolved");
+      landedStoreId = store.id;
 
       const token = await ctx.gateway.exchangeCode({ code, shopId });
       await saveToken(ctx.deps, store.id, token);
@@ -501,23 +533,25 @@ export async function storeRoutes(app: FastifyInstance): Promise<void> {
       const message = error instanceof Error ? error.message : "unknown";
       const code = (error as { code?: string }).code ?? null;
       ctx.logger.error(
-        { storeId, shopId, code, message },
+        { storeId: landedStoreId, shopId, code, message },
         "shopee callback exchange failed",
       );
-      await markStoreError(
-        ctx.deps,
-        storeId,
-        `authorization failed: ${message}`,
-      );
+      if (landedStoreId) {
+        await markStoreError(
+          ctx.deps,
+          landedStoreId,
+          `authorization failed: ${message}`,
+        );
+      }
       await ctx.audit({
         actorType: "SYSTEM",
         action: "store.authorization_failed",
         targetType: "store",
-        targetId: storeId,
-        metadata: { message },
+        targetId: landedStoreId ?? undefined,
+        metadata: { message, shopId },
       });
       return reply.redirect(
-        `${ctx.config.adminOrigin}/admin/stores/${storeId}?error=exchange_failed`,
+        `${ctx.config.adminOrigin}/admin/stores${landedStoreId ? `/${landedStoreId}` : ""}?error=exchange_failed`,
       );
     }
   });

@@ -122,9 +122,7 @@ export interface ShopeeGateway {
     mainAccountId?: number;
     refreshToken: string;
   }): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }>;
-  getShopInfo(
-    access: StoreAccess,
-  ): Promise<{
+  getShopInfo(access: StoreAccess): Promise<{
     shopId: number;
     shopName: string | null;
     region: string | null;
@@ -354,19 +352,32 @@ export class LiveShopeeGateway implements ShopeeGateway {
    * A token issued for a main account is refreshed against that main account; a
    * shop id there answers an error that reads like an expired refresh token.
    */
-  async refreshToken(input: { shopId?: number; mainAccountId?: number; refreshToken: string }) {
+  async refreshToken(input: {
+    shopId?: number;
+    mainAccountId?: number;
+    refreshToken: string;
+  }) {
     try {
       const body: Record<string, unknown> = {
         refresh_token: input.refreshToken,
         partner_id: this.options.partnerId,
       };
-      if (input.mainAccountId !== undefined) body.main_account_id = input.mainAccountId;
-      else if (input.shopId !== undefined) body.shop_id = input.shopId;
+      if (input.shopId !== undefined) body.shop_id = input.shopId;
+      else if (input.mainAccountId !== undefined)
+        body.main_account_id = input.mainAccountId;
 
-      const raw = await this.client.publicPostFlat<Record<string, unknown>>(REFRESH_PATH, body);
-      const token = (raw.response as Record<string, unknown> | undefined) ?? raw;
+      const raw = await this.client.publicPostFlat<Record<string, unknown>>(
+        REFRESH_PATH,
+        body,
+      );
+      const token =
+        (raw.response as Record<string, unknown> | undefined) ?? raw;
       if (!token.access_token) {
-        throw new ShopeeGatewayError("error_token", "refresh response has no access_token", false);
+        throw new ShopeeGatewayError(
+          "error_token",
+          "refresh response has no access_token",
+          false,
+        );
       }
       return {
         accessToken: String(token.access_token),
@@ -716,7 +727,11 @@ export class FixtureShopeeGateway implements ShopeeGateway {
     };
   }
 
-  async refreshToken(input: { shopId?: number; mainAccountId?: number; refreshToken: string }) {
+  async refreshToken(input: {
+    shopId?: number;
+    mainAccountId?: number;
+    refreshToken: string;
+  }) {
     this.maybeFail("refreshToken");
     return {
       accessToken: `fixture-access-${input.shopId ?? input.mainAccountId ?? 0}-${Date.now()}`,

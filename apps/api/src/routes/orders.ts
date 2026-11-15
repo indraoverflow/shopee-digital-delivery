@@ -54,7 +54,11 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     const where = filters.length ? and(...filters) : undefined;
 
     const rows = await ctx.db
-      .select({ order: schema.orders, storeLabel: schema.shopeeStores.label })
+      .select({
+        order: schema.orders,
+        storeLabel: schema.shopeeStores.label,
+        storeName: schema.shopeeStores.shopName,
+      })
       .from(schema.orders)
       .innerJoin(
         schema.shopeeStores,
@@ -104,6 +108,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       .map((row) => ({
         ...row.order,
         storeLabel: row.storeLabel,
+        storeName: row.storeName,
         items: Number(itemStats.get(row.order.id)?.total ?? 0),
         unmappedItems: Number(itemStats.get(row.order.id)?.unmapped ?? 0),
         fulfillments: Number(fulfillmentStats.get(row.order.id)?.total ?? 0),

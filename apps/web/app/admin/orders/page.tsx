@@ -16,6 +16,7 @@ interface OrderRow {
   state: string;
   totalAmount: string | null;
   storeLabel: string;
+  storeName: string | null;
   items: number;
   unmappedItems: number;
   fulfillments: number;
@@ -32,7 +33,9 @@ export default function OrdersPage() {
   const [mapping, setMapping] = useState("all");
   const debounced = useDebounced(search);
 
-  const stores = useApi<{ data: Array<{ id: string; label: string }> }>("/admin/stores");
+  const stores = useApi<{
+    data: Array<{ id: string; label: string; shopName: string | null }>;
+  }>("/admin/stores");
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: "20", mapping });
@@ -60,7 +63,7 @@ export default function OrdersPage() {
         <Select
           value={storeId}
           onValueChange={setStoreId}
-          options={[{ value: "all", label: "Semua toko" }, ...(stores.data?.data ?? []).map((store) => ({ value: store.id, label: store.label }))]}
+          options={[{ value: "all", label: "Semua toko" }, ...(stores.data?.data ?? []).map((store) => ({ value: store.id, label: store.shopName ?? store.label }))]}
           className="min-w-40"
         />
         <Select
@@ -113,7 +116,7 @@ export default function OrdersPage() {
                     </Link>
                     {order.shopeeStatus ? <p className="text-[10.5px] uppercase tracking-wide text-ink-300">{order.shopeeStatus}</p> : null}
                   </Td>
-                  <Td className="text-[12px] text-ink-500">{order.storeLabel}</Td>
+                  <Td className="text-[12px] text-ink-500">{order.storeName ?? order.storeLabel}</Td>
                   <Td className="text-[12.5px] text-ink-600">{order.buyerUsername ?? "—"}</Td>
                   <Td className="tabular-nums text-ink-700">{formatRupiah(order.totalAmount)}</Td>
                   <Td>

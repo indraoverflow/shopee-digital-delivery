@@ -20,7 +20,7 @@ import {
   grantDriveAccess,
   maskEmail,
 } from "../src/drive.js";
-import { verifyClaim } from "../src/claims.js";
+import { revokeClaim, verifyClaim } from "../src/claims.js";
 import { harness, sampleStore, type Harness } from "./helpers.js";
 
 /**
@@ -421,6 +421,44 @@ describe("sharing a Drive file with a buyer", () => {
       "GRANTED",
       "REVOKED",
     ]);
+  });
+
+  it("takes the file back when the claim is revoked", async () => {
+    await connectStore();
+    const { fulfillment, token } = await seedDriveFulfillment();
+
+    await grantDriveAccess(h.deps, {
+      token,
+      fulfillmentId: fulfillment.id,
+      email: "rina@gmail.com",
+      emailConfirm: "rina@gmail.com",
+    });
+
+    const [grant] = await h.db.db
+      .select()
+      .from(schema.driveGrants)
+      .where(eq(schema.driveGrants.fulfillmentId, fulfillment.id));
+
+    // The file lives in the buyer's own Drive, so revoking the claim has to reach Google.
+    await revokeClaim(h.deps, {
+      claimId: grant!.claimId,
+      reason: "uji pencabutan",
+      actorLabel: "admin@serah.id",
+    });
+
+    expect(
+      calls.filter(
+        (call) =>
+          call.method === "DELETE" && call.url.includes("/permissions/"),
+      ).length,
+    ).toBeGreaterThanOrEqual(1);
+
+    const [after] = await h.db.db
+      .select()
+      .from(schema.driveGrants)
+      .where(eq(schema.driveGrants.id, grant!.id));
+    expect(after!.status).toBe("REVOKED");
+    expect(after!.revokedAt).not.toBeNull();
   });
 
   it("fixes a typo inside the window by revoking the wrong address first", async () => {

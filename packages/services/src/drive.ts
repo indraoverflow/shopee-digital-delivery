@@ -871,6 +871,52 @@ export async function retryDriveGrant(
 }
 
 /** Failed shares, so monitoring can say how many buyers are waiting on Drive. */
+/**
+ * A revoked claim must not leave the buyer holding the file. Called by the claim
+ * revocation path: every grant that is still open has its permission removed, and a
+ * permission Google no longer knows about counts as removed, because that is the
+ * state we want anyway.
+ */
+export async function revokeFulfillmentDriveGrants(
+  deps: ServiceDeps,
+  input: { fulfillmentId: string; reason: string },
+): Promise<number> {
+  const grants = await deps.db
+    .select()
+    .from(schema.driveGrants)
+    .where(eq(schema.driveGrants.fulfillmentId, input.fulfillmentId));
+  const open = grants.filter((grant) => grant.status !== "REVOKED");
+  if (open.length === 0) return 0;
+
+  const now = nowOf(deps);
+  const accessToken = await accessTokenFor(deps, open[0]!.storeId);
+  let revoked = 0;
+
+  for (const grant of open) {
+    if (grant.permissionId) {
+      await deletePermission(accessToken, grant.fileId, grant.permissionId);
+    }
+    await deps.db
+      .update(schema.driveGrants)
+      .set({ status: "REVOKED", revokedAt: now, updatedAt: now })
+      .where(eq(schema.driveGrants.id, grant.id));
+    revoked += 1;
+  }
+
+  await recordAudit(deps, {
+    actorType: "SYSTEM",
+    actorId: null,
+    actorLabel: "claim revocation",
+    action: "drive.revoke",
+    targetType: "fulfillment",
+    targetId: input.fulfillmentId,
+    metadata: { grants: revoked, reason: input.reason },
+    ip: null,
+  });
+
+  return revoked;
+}
+
 export async function failedDriveGrants(
   deps: ServiceDeps,
   options: { limit?: number } = {},

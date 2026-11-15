@@ -27,6 +27,7 @@ import {
 } from "drizzle-orm";
 import { recordAudit } from "./audit.js";
 import { findApprovedWindow } from "./claim-requests.js";
+import { revokeFulfillmentDriveGrants } from "./drive.js";
 import { decodeMintedLinks } from "./meterai.js";
 import { notify } from "./notify.js";
 import { queueAutoShip } from "./shipping.js";
@@ -1022,6 +1023,30 @@ export async function revokeClaim(
     metadata: { reason: input.reason },
     ip: input.ip ?? null,
   });
+
+  // The one delivery that survives a revocation is a Drive share: the file sits in the
+  // buyer's own account. Revoking the claim has to reach into Google, and a Drive
+  // outage must not stop the revocation itself from being recorded.
+  try {
+    await revokeFulfillmentDriveGrants(deps, {
+      fulfillmentId: claim.fulfillmentId,
+      reason: input.reason,
+    });
+  } catch (error) {
+    await recordAudit(deps, {
+      actorType: "SYSTEM",
+      actorId: null,
+      actorLabel: "claim revocation",
+      action: "drive.revoke_failed",
+      targetType: "fulfillment",
+      targetId: claim.fulfillmentId,
+      metadata: {
+        reason: input.reason,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      ip: null,
+    });
+  }
 
   await notify(deps, {
     type: "claim.revoked",
